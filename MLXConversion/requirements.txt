@@ -1,0 +1,4 @@
+mlx-lm
+mlx-embeddings
+huggingface_hub[cli]
+numpy

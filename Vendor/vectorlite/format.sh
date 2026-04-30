@@ -1,0 +1,1 @@
+clang-format -style=file -i vectorlite/*.h vectorlite/*.cpp

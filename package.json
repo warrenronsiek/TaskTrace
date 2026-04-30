@@ -1,0 +1,15 @@
+{
+  "name": "tasktrace-release",
+  "private": true,
+  "version": "0.0.0-development",
+  "scripts": {
+    "semantic-release": "semantic-release"
+  },
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "13.0.1",
+    "@semantic-release/exec": "7.1.0",
+    "@semantic-release/release-notes-generator": "14.1.0",
+    "conventional-changelog-conventionalcommits": "8.0.0",
+    "semantic-release": "24.2.7"
+  }
+}

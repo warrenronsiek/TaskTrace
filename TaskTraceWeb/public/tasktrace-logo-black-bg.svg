@@ -1,0 +1,16 @@
+
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="512" height="512" fill="#000000"/>
+
+    <!-- connected T bar -->
+<rect x="96" y="120" width="320" height="40" rx="20" fill="#ffffff"></rect>
+
+<!-- left T stem -->
+<rect x="176" y="120" width="40" height="180" rx="20" fill="#ffffff"></rect>
+
+<!-- right T stem -->
+<rect x="296" y="120" width="40" height="180" rx="20" fill="#ffffff"></rect>
+
+<!-- smiling mouth -->
+<path d="M176 350 Q256 420 336 350" stroke="#ffffff" stroke-width="40" stroke-linecap="round" fill="none"></path>
+</svg>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TaskTrace WebView</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --text-primary: rgba(20, 24, 30, 0.96);
+        --text-secondary: rgba(78, 88, 102, 0.92);
+        --accent: #5da6ec;
+        --edge: rgba(113, 136, 164, 0.36);
+        --grid: rgba(113, 136, 164, 0.28);
+        --node-stroke: rgba(255, 255, 255, 0.64);
+        --node-activity: #7fc0ff;
+        --node-screenshot: #f3b07a;
+        --node-file: #7fc0ff;
+        --node-file-glow: rgba(93, 166, 236, 0.56);
+        --knowledge-node: rgba(202, 185, 238, 0.66);
+        --knowledge-node-stroke: rgba(245, 240, 255, 0.48);
+        --knowledge-node-selected: rgba(215, 198, 246, 0.92);
+        --knowledge-node-selected-stroke: rgba(255, 255, 255, 0.92);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --text-primary: rgba(241, 245, 251, 0.96);
+          --text-secondary: rgba(176, 188, 204, 0.92);
+          --accent: #7fc0ff;
+          --edge: rgba(116, 138, 166, 0.44);
+          --grid: rgba(116, 138, 166, 0.34);
+          --node-stroke: rgba(255, 255, 255, 0.22);
+          --node-activity: #7fc0ff;
+          --node-screenshot: #f3b07a;
+          --node-file: #7fc0ff;
+          --node-file-glow: rgba(127, 192, 255, 0.42);
+          --knowledge-node: rgba(208, 190, 240, 0.68);
+          --knowledge-node-stroke: rgba(235, 227, 255, 0.32);
+          --knowledge-node-selected: rgba(220, 202, 248, 0.94);
+          --knowledge-node-selected-stroke: rgba(255, 255, 255, 0.74);
+        }
+      }
+
+      body {
+        margin: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background: transparent;
+        color: var(--text-primary);
+        font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
+      }
+
+      #app {
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .graph-shell {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
+      .graph-svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .graph-tooltip {
+        position: absolute;
+        inset: auto auto 0 0;
+        pointer-events: none;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 180ms ease, transform 180ms ease;
+      }
+
+      .graph-tooltip.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .tooltip-card {
+        max-width: 400px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: color-mix(in srgb, black 16%, transparent);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 20px 44px rgba(15, 22, 32, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+      }
+
+      .tooltip-row + .tooltip-row {
+        margin-top: 10px;
+      }
+
+      .tooltip-label {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+
+      .tooltip-value {
+        display: block;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--text-primary);
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script src="./bundle.js"></script>
+  </body>
+  </html>

@@ -1,0 +1,9 @@
+{
+  "name": "com.tasktrace.browser_plugin",
+  "description": "TaskTrace browser plugin native messaging host",
+  "path": "__TASKTRACE_BROWSER_PLUGIN_HOST_SCRIPT_PATH__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__TASKTRACE_EXTENSION_ID__/"
+  ]
+}

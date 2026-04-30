@@ -1,0 +1,36 @@
+{
+  "name": "tasktrace-web",
+  "version": "1.0.0",
+  "description": "TaskTrace landing page",
+  "scripts": {
+    "dev": "webpack serve --config webpack.dev.js",
+    "start": "pnpm dev",
+    "build:dev": "webpack --config webpack.dev.js",
+    "build:prod": "webpack --config webpack.prod.js",
+    "build": "webpack --config webpack.prod.js"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@posthog/react": "^1.8.2",
+    "posthog-js": "^ 1.368.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^6.10.0",
+    "html-webpack-plugin": "^5.6.0",
+    "style-loader": "^3.3.4",
+    "terser-webpack-plugin": "^5.3.10",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.4.2",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.4",
+    "webpack-merge": "^5.10.0"
+  }
+}

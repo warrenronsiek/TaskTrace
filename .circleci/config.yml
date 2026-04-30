@@ -1,0 +1,420 @@
+version: 2.1
+
+commands:
+  install_web_dependencies:
+    steps:
+      - restore_cache:
+          keys:
+            - v2-tasktrace-web-pnpm-{{ checksum "TaskTraceWeb/pnpm-lock.yaml" }}
+      - run:
+          name: Install web dependencies
+          command: |
+            npx pnpm@9 config set store-dir ~/.pnpm-store
+            cd TaskTraceWeb
+            npx pnpm@9 install --frozen-lockfile
+      - save_cache:
+          paths:
+            - ~/.pnpm-store
+            - TaskTraceWeb/node_modules
+          key: v2-tasktrace-web-pnpm-{{ checksum "TaskTraceWeb/pnpm-lock.yaml" }}
+
+  install_webview_dependencies:
+    steps:
+      - restore_cache:
+          keys:
+            - v1-tasktrace-webview-npm-{{ checksum "TaskTraceWebView/package.json" }}
+      - run:
+          name: Install TaskTraceWebView dependencies
+          command: |
+            cd TaskTraceWebView
+            npm ci
+      - save_cache:
+          paths:
+            - TaskTraceWebView/node_modules
+          key: v1-tasktrace-webview-npm-{{ checksum "TaskTraceWebView/package.json" }}
+
+  install_linux_aws_cli:
+    steps:
+      - run:
+          name: Install AWS CLI
+          command: |
+            test -n "$TASKTRACE_AWS_REGION"
+            sudo apt-get update
+            sudo apt-get install -y curl unzip less
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            sudo ./aws/install
+            mkdir -p ~/.aws
+            printf '%s\n' \
+              '[default]' \
+              "region = $TASKTRACE_AWS_REGION" \
+              'output = json' \
+              'cli_pager =' \
+              'credentials_source = Environment' \
+              'role_session_name = CCISession' \
+              > ~/.aws/config
+
+  install_macos_aws_cli:
+    steps:
+      - run:
+          name: Install AWS CLI
+          command: |
+            test -n "$TASKTRACE_AWS_REGION"
+            curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
+            sudo softwareupdate --install-rosetta --agree-to-license
+            sudo installer -pkg ./AWSCLIV2.pkg -target /
+            mkdir -p ~/.aws
+            printf '%s\n' \
+              '[default]' \
+              "region = $TASKTRACE_AWS_REGION" \
+              'output = json' \
+              'cli_pager =' \
+              'credentials_source = Environment' \
+              'role_session_name = CCISession' \
+              > ~/.aws/config
+
+  hydrate_bundled_models:
+    steps:
+      - restore_cache:
+          keys:
+            - v2-tasktrace-text-model-{{ arch }}-{{ checksum "MLXConversion/scripts/vendor_text_model.sh" }}
+      - restore_cache:
+          keys:
+            - v2-tasktrace-visual-model-{{ arch }}-{{ checksum "MLXConversion/scripts/vendor_visual_model.sh" }}
+      - run:
+          name: Hydrate bundled MLX app models
+          command: |
+            if ! git lfs version >/dev/null 2>&1; then
+              brew install git-lfs
+            fi
+            ./MLXConversion/scripts/hydrate_bundled_models.sh
+      - save_cache:
+          key: v2-tasktrace-text-model-{{ arch }}-{{ checksum "MLXConversion/scripts/vendor_text_model.sh" }}
+          paths:
+            - AppResources/LocalModels/Qwen3.5-4B-OptiQ-4bit
+      - save_cache:
+          key: v2-tasktrace-visual-model-{{ arch }}-{{ checksum "MLXConversion/scripts/vendor_visual_model.sh" }}
+          paths:
+            - AppResources/LocalModels/gemma-4-e2b-it-4bit
+
+  setup_macos_signing:
+    steps:
+      - run:
+          name: Setup Xcode signing certificates
+          command: |
+            test -n "$TASKTRACE_DEVELOPER_ID_APPLICATION"
+            mkdir -p apple-certs
+            curl -fL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o apple-certs/DeveloperIDG2CA.cer
+            curl -fL https://www.apple.com/certificateauthority/DeveloperIDCA.cer -o apple-certs/DeveloperIDCA.cer
+            curl -fL https://www.apple.com/certificateauthority/AppleRootCA-G3.cer -o apple-certs/AppleRootCA-G3.cer
+            curl -fL https://www.apple.com/appleca/AppleIncRootCertificate.cer -o apple-certs/AppleIncRootCertificate.cer
+            echo "$APPLE_APP_CERT_B64" | base64 --decode > DeveloperIDApp.p12
+            security create-keychain -p "" build.keychain
+            security set-keychain-settings -lut 21600 build.keychain
+            security default-keychain -s build.keychain
+            security list-keychains -d user -s build.keychain /Library/Keychains/System.keychain
+            security unlock-keychain -p "" build.keychain
+            security import apple-certs/DeveloperIDG2CA.cer -k build.keychain -T /usr/bin/codesign
+            security import apple-certs/DeveloperIDCA.cer -k build.keychain -T /usr/bin/codesign
+            security import apple-certs/AppleRootCA-G3.cer -k build.keychain -T /usr/bin/codesign
+            security import apple-certs/AppleIncRootCertificate.cer -k build.keychain -T /usr/bin/codesign
+            security import DeveloperIDApp.p12 -k build.keychain -f pkcs12 -P "$APPLE_APP_CERT_PASS" -T /usr/bin/codesign
+            security delete-certificate -Z 260BE7989EF919DFE4BFCB65FC60C899CBFC9216 build.keychain || true
+            security delete-certificate -Z 4DC3FF79A4C66107550A52CFC4108174439E3B54 build.keychain || true
+            security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+jobs:
+  deploy_web:
+    docker:
+      - image: cimg/node:20.18
+    resource_class: medium
+    parameters:
+      build_command:
+        type: string
+      deployment_channel:
+        type: string
+    steps:
+      - checkout
+      - install_web_dependencies
+      - run:
+          name: Build web bundle
+          command: |
+            if [ "<< parameters.deployment_channel >>" = "prod" ]; then
+              test -n "$TASKTRACE_MAC_DOWNLOAD_URL_PROD"
+            else
+              test -n "$TASKTRACE_MAC_DOWNLOAD_URL_DEV"
+            fi
+            cd TaskTraceWeb
+            << parameters.build_command >>
+      - install_linux_aws_cli
+      - run:
+          name: Deploy static site
+          command: |
+            if [ "<< parameters.deployment_channel >>" = "prod" ]; then
+              S3_BUCKET_NAME="$TASKTRACE_PROD_S3_BUCKET"
+              CLOUDFRONT_DISTRIBUTION_ID="$TASKTRACE_PROD_CLOUDFRONT_DISTRIBUTION_ID"
+            else
+              S3_BUCKET_NAME="$TASKTRACE_DEV_S3_BUCKET"
+              CLOUDFRONT_DISTRIBUTION_ID="$TASKTRACE_DEV_CLOUDFRONT_DISTRIBUTION_ID"
+            fi
+            test -n "$S3_BUCKET_NAME"
+            test -n "$CLOUDFRONT_DISTRIBUTION_ID"
+            aws s3 sync ./TaskTraceWeb/dist s3://"$S3_BUCKET_NAME" \
+              --acl public-read \
+              --delete \
+              --exclude "desktop" \
+              --exclude "desktop/*"
+            aws --no-cli-pager cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+              --paths "/*" > /tmp/tasktrace-web-invalidation.json
+
+  build_macos:
+    macos:
+      xcode: 26.3.0
+    resource_class: m4pro.medium
+    parameters:
+      branch_name:
+        type: string
+        default: dev
+    steps:
+      - checkout
+      - hydrate_bundled_models
+      - run:
+          name: Prepare git history for semantic-release
+          command: |
+            if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+              git fetch --unshallow origin
+            fi
+            git fetch --tags origin "$CIRCLE_BRANCH"
+            git checkout -B "$CIRCLE_BRANCH" "origin/$CIRCLE_BRANCH"
+      - run:
+          name: Install semantic-release tooling
+          command: |
+            if ! command -v node >/dev/null 2>&1; then
+              brew install node@20
+              brew link --overwrite --force node@20
+            fi
+            npm install
+      - install_webview_dependencies
+      - run:
+          name: Build TaskTraceWebView bundle
+          command: |
+            cd TaskTraceWebView
+            npm run build
+      - run:
+          name: Calculate release version for archive build
+          no_output_timeout: 20m
+          command: |
+            rm -f .release-version.env
+            test -n "$GITHUB_DEPLOY_KEY_B64"
+            mkdir -p ~/.ssh
+            printf '%s' "$GITHUB_DEPLOY_KEY_B64" | base64 -D > ~/.ssh/tasktrace_release_key
+            chmod 600 ~/.ssh/tasktrace_release_key
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            git config user.name "TaskTrace Release Bot"
+            test -n "$TASKTRACE_RELEASE_BOT_EMAIL"
+            git config user.email "$TASKTRACE_RELEASE_BOT_EMAIL"
+            git remote set-url origin "git@github.com:${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}.git"
+            git config core.sshCommand "ssh -i ~/.ssh/tasktrace_release_key -o IdentitiesOnly=yes"
+            npx semantic-release
+      - run:
+          name: End gracefully if semantic-release did not create a release
+          command: |
+            if [ -f .release-version.env ]; then
+              cat .release-version.env
+              echo "Is a release!"
+            else
+              echo "Not a release"
+              circleci-agent step halt
+            fi
+      - restore_cache:
+          keys:
+            - v1-spm-{{ checksum "TaskTrace.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" }}
+      - run:
+          name: Resolve SPM dependencies
+          command: |
+            xcodebuild -resolvePackageDependencies \
+              -project TaskTrace.xcodeproj \
+              -scheme TaskTrace
+      - save_cache:
+          paths:
+            - ~/Library/Caches/org.swift.swiftpm
+          key: v1-spm-{{ checksum "TaskTrace.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" }}
+      - setup_macos_signing
+      - run:
+          name: Archive macOS app
+          no_output_timeout: 40m
+          command: |
+            . ./.release-version.env
+            mkdir -p output
+            PRODUCT_BUNDLE_IDENTIFIER=$(
+              if [ "<< parameters.branch_name >>" = "master" ]; then
+                printf '%s' "$TASKTRACE_PROD_BUNDLE_ID"
+              else
+                printf '%s' "$TASKTRACE_DEV_BUNDLE_ID"
+              fi
+            )
+            TASKTRACE_APPCAST_URL=$(
+              if [ "<< parameters.branch_name >>" = "master" ]; then
+                printf '%s' "$TASKTRACE_PROD_APPCAST_URL"
+              else
+                printf '%s' "$TASKTRACE_DEV_APPCAST_URL"
+              fi
+            )
+            test -n "$PRODUCT_BUNDLE_IDENTIFIER"
+            test -n "$TASKTRACE_APPCAST_URL"
+            test -n "$TASKTRACE_APPLE_DEVELOPMENT_TEAM"
+            test -n "$TASKTRACE_DEVELOPER_ID_APPLICATION"
+            test -n "$TASKTRACE_SPARKLE_PUBLIC_ED_KEY"
+            test -n "$TASKTRACE_BROWSER_PLUGIN_EXTENSION_ID"
+            xcodebuild archive \
+              -project TaskTrace.xcodeproj \
+              -scheme TaskTrace \
+              -configuration Release \
+              -archivePath output/TaskTrace.xcarchive \
+              -destination "generic/platform=macOS" \
+              MARKETING_VERSION="$MARKETING_VERSION" \
+              CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
+              PRODUCT_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
+              TASKTRACE_APP_DISPLAY_NAME="TaskTrace" \
+              TASKTRACE_APP_NAME="TaskTrace" \
+              TASKTRACE_APPCAST_URL="$TASKTRACE_APPCAST_URL" \
+              TASKTRACE_BROWSER_PLUGIN_EXTENSION_ID="$TASKTRACE_BROWSER_PLUGIN_EXTENSION_ID" \
+              TASKTRACE_SPARKLE_PUBLIC_ED_KEY="$TASKTRACE_SPARKLE_PUBLIC_ED_KEY" \
+              CODE_SIGN_STYLE=Manual \
+              CODE_SIGN_IDENTITY="$TASKTRACE_DEVELOPER_ID_APPLICATION" \
+              DEVELOPMENT_TEAM="$TASKTRACE_APPLE_DEVELOPMENT_TEAM" \
+              OTHER_CODE_SIGN_FLAGS="--keychain build.keychain" \
+              -verbose
+      - run:
+          name: Sign archive and create install DMG
+          command: |
+            APP_PATH=output/TaskTrace.xcarchive/Products/Applications/TaskTrace.app
+            DMG_STAGING_PATH=output/dmg-staging
+            DMG_PATH=output/TaskTrace-macOS.dmg
+            rm -rf "$DMG_STAGING_PATH" "$DMG_PATH"
+            mkdir -p "$DMG_STAGING_PATH"
+            cp -R "$APP_PATH" "$DMG_STAGING_PATH/TaskTrace.app"
+            ln -s /Applications "$DMG_STAGING_PATH/Applications"
+            codesign -vvv --deep --strict "$DMG_STAGING_PATH/TaskTrace.app" \
+              --sign "$TASKTRACE_DEVELOPER_ID_APPLICATION" \
+              --timestamp \
+              --options=runtime \
+              --entitlements TaskTrace/TaskTrace.entitlements \
+              --force
+            codesign -dvv "$DMG_STAGING_PATH/TaskTrace.app/Contents/Resources/vectorlite.dylib" 2>&1 | grep '^Timestamp='
+            hdiutil create \
+              -volname TaskTrace \
+              -srcfolder "$DMG_STAGING_PATH" \
+              -ov \
+              -format UDZO \
+              "$DMG_PATH"
+            codesign --deep --force --verify --verbose \
+              --sign "$TASKTRACE_DEVELOPER_ID_APPLICATION" \
+              --timestamp \
+              --options=runtime \
+              "$DMG_PATH"
+      - run:
+          name: Notarize DMG
+          no_output_timeout: 60m
+          command: |
+            test -n "$APPLE_CONNECT_KEY_B64"
+            test -n "$TASKTRACE_PROD_NOTARY_KEY_ID"
+            test -n "$TASKTRACE_PROD_NOTARY_ISSUER_ID"
+            printf '%s' "$APPLE_CONNECT_KEY_B64" | base64 -D > AuthKey.p8
+            grep -q '^-----BEGIN PRIVATE KEY-----$' AuthKey.p8
+            grep -q '^-----END PRIVATE KEY-----$' AuthKey.p8
+            xcrun notarytool store-credentials TaskTrace \
+              --key ./AuthKey.p8 \
+              --key-id "$TASKTRACE_PROD_NOTARY_KEY_ID" \
+              --issuer "$TASKTRACE_PROD_NOTARY_ISSUER_ID"
+            NOTARY_OUTPUT=$(xcrun notarytool submit output/TaskTrace-macOS.dmg -p TaskTrace --wait --output-format json)
+            echo "$NOTARY_OUTPUT"
+            NOTARY_ID=$(echo "$NOTARY_OUTPUT" | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')
+            NOTARY_STATUS=$(echo "$NOTARY_OUTPUT" | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])')
+            if [ "$NOTARY_STATUS" != "Accepted" ]; then
+              xcrun notarytool log "$NOTARY_ID" -p TaskTrace
+              exit 1
+            fi
+            xcrun stapler staple output/TaskTrace-macOS.dmg
+      - install_macos_aws_cli
+      - run:
+          name: Install Sparkle appcast tool
+          command: |
+            SPARKLE_VERSION=2.9.0
+            curl -fL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+              -o /tmp/Sparkle.tar.xz
+            mkdir -p /tmp/sparkle
+            tar -xf /tmp/Sparkle.tar.xz -C /tmp/sparkle
+            cp /tmp/sparkle/bin/generate_appcast /usr/local/bin/
+      - run:
+          name: Recover existing appcast.xml
+          command: |
+            if [ "<< parameters.branch_name >>" = "master" ]; then
+              S3_BUCKET_NAME="$TASKTRACE_PROD_S3_BUCKET"
+            else
+              S3_BUCKET_NAME="$TASKTRACE_DEV_S3_BUCKET"
+            fi
+            test -n "$S3_BUCKET_NAME"
+            if aws s3 ls s3://"$S3_BUCKET_NAME"/desktop/appcast.xml >/dev/null 2>&1; then
+              aws s3 cp s3://"$S3_BUCKET_NAME"/desktop/appcast.xml output/appcast.xml
+            else
+              echo "No existing appcast.xml in s3://$S3_BUCKET_NAME/desktop/"
+            fi
+      - run:
+          name: Generate Sparkle appcast
+          command: |
+            printf '%s\n' "$SPARKLE_PRIVATE_KEY" > sparkle_private_key
+            generate_appcast --ed-key-file sparkle_private_key output/
+      - run:
+          name: Deploy desktop artifacts
+          command: |
+            if [ "<< parameters.branch_name >>" = "master" ]; then
+              S3_BUCKET_NAME="$TASKTRACE_PROD_S3_BUCKET"
+              CLOUDFRONT_DISTRIBUTION_ID="$TASKTRACE_PROD_CLOUDFRONT_DISTRIBUTION_ID"
+            else
+              S3_BUCKET_NAME="$TASKTRACE_DEV_S3_BUCKET"
+              CLOUDFRONT_DISTRIBUTION_ID="$TASKTRACE_DEV_CLOUDFRONT_DISTRIBUTION_ID"
+            fi
+            test -n "$S3_BUCKET_NAME"
+            test -n "$CLOUDFRONT_DISTRIBUTION_ID"
+            aws s3 cp ./output/TaskTrace-macOS.dmg s3://"$S3_BUCKET_NAME"/desktop/TaskTrace-macOS.dmg --acl public-read
+            aws s3 cp ./output/appcast.xml s3://"$S3_BUCKET_NAME"/desktop/appcast.xml --acl public-read
+            aws --no-cli-pager cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+              --paths "/*" > /tmp/tasktrace-desktop-invalidation.json
+
+workflows:
+  deploy_web:
+    jobs:
+      - deploy_web:
+          build_command: npx pnpm@9 build:dev
+          deployment_channel: dev
+          filters:
+            branches:
+              only:
+                - dev
+      - deploy_web:
+          name: deploy_web_prod
+          build_command: npx pnpm@9 build:prod
+          deployment_channel: prod
+          filters:
+            branches:
+              only:
+                - master
+
+  deploy_desktop:
+    jobs:
+      - build_macos:
+          branch_name: dev
+          filters:
+            branches:
+              only:
+                - dev
+      - build_macos:
+          name: build_macos_prod
+          branch_name: master
+          filters:
+            branches:
+              only:
+                - master

@@ -1,0 +1,36 @@
+ChronoKeep
+Build
+default.profraw
+*.profraw
+node_modules/
+.release-version.env
+.oss-template-values.local.json
+.mcp.json
+**/dist/
+.agents/
+.air/
+**/dist/*
+AppResources/LocalModels/Qwen3-8B-4bit/
+AppResources/LocalModels/Qwen3.5-4B-OptiQ-4bit/
+AppResources/LocalModels/gemma-4-e2b-it-4bit/
+# IDE
+**/.idea/
+**/.claude/
+**/xcuserdata/
+*.xcuserstate
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+.terraform.lock.hcl
+**/backend.hcl
+*.tfvars
+BrowserPlugin/Reference/remarkable/
+BrowserPlugin/Reference/obsidian-web-clipper/
+Vendor/vectorlite/build/
+Vendor/vectorlite/vcpkg/
+Infra/tmp.json
+tmp-mcp-probe.mjs
+Marketing/
+**/.env**

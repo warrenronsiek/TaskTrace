@@ -1,0 +1,24 @@
+{
+  "name": "tasktrace-webview",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bundled web views for the TaskTrace macOS app",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "benchmark:knowledge-graph": "npm run build && node ./scripts/knowledgeGraphBenchmarkServer.mjs",
+    "benchmark:knowledge-graph:serve": "node ./scripts/knowledgeGraphBenchmarkServer.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@vitest/ui": "^4.1.4",
+    "jsdom": "^29.0.2",
+    "vitest": "^4.1.4",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@chenglou/pretext": "^0.0.5",
+    "d3": "^7.9.0"
+  }
+}
