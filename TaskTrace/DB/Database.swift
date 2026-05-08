@@ -904,6 +904,9 @@ struct ActivityRecord: Codable, Equatable, FetchableRecord, PersistableRecord, T
     let tagAssignmentSource: String?
     let ontologyCandidateID: Int64?
     let overviewAssignmentSource: String?
+    let goalTodoID: Int64?
+    let goalTodoAssignmentSource: String?
+    let goalTodoAssignmentScore: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -921,6 +924,9 @@ struct ActivityRecord: Codable, Equatable, FetchableRecord, PersistableRecord, T
         case tagAssignmentSource = "tag_assignment_source"
         case ontologyCandidateID = "ontology_candidate_id"
         case overviewAssignmentSource = "overview_assignment_source"
+        case goalTodoID = "goal_todo_id"
+        case goalTodoAssignmentSource = "goal_todo_assignment_source"
+        case goalTodoAssignmentScore = "goal_todo_assignment_score"
     }
 }
 
@@ -936,6 +942,178 @@ nonisolated struct ActivitySummaryUMAPBatch: Equatable, Sendable {
     let vectorsData: Data
     let vectorCount: Int
     let vectorDimension: Int
+}
+
+nonisolated enum GoalTodoStatus: String, CaseIterable, Codable, Sendable {
+    case open
+    case done
+    case failed
+}
+
+nonisolated enum GoalTodoAssignmentSource: String, Codable, Sendable {
+    case automatic = "auto"
+    case manual
+}
+
+nonisolated struct GoalRecord: Codable, Equatable, FetchableRecord, PersistableRecord, TableRecord, Identifiable, Sendable {
+    static let databaseTableName = "goals"
+
+    let id: Int64
+    let name: String
+    let description: String?
+    let createTs: Date
+    let doneTs: Date?
+    let deleteTs: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case description
+        case createTs = "create_ts"
+        case doneTs = "done_ts"
+        case deleteTs = "delete_ts"
+    }
+}
+
+nonisolated struct GoalTodoRecord: Codable, Equatable, FetchableRecord, PersistableRecord, TableRecord, Identifiable, Sendable {
+    static let databaseTableName = "goal_todos"
+
+    let id: Int64
+    let goalID: Int64
+    let name: String
+    let createTs: Date
+    let doneTs: Date?
+    let status: GoalTodoStatus
+    let statusTs: Date?
+    let repeating: Bool
+    let repeatTemplateID: Int64?
+    let targetDate: Date?
+    let dailyTargetSeconds: Int?
+    let embedding: Data?
+    let deleteTs: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case goalID = "goal_id"
+        case name
+        case createTs = "create_ts"
+        case doneTs = "done_ts"
+        case status
+        case statusTs = "status_ts"
+        case repeating
+        case repeatTemplateID = "repeat_template_id"
+        case targetDate = "target_date"
+        case dailyTargetSeconds = "daily_target_seconds"
+        case embedding
+        case deleteTs = "delete_ts"
+    }
+}
+
+nonisolated struct GoalInput: Equatable, Sendable {
+    let id: Int64
+    let name: String
+    let description: String?
+    let createTs: Date?
+    let doneTs: Date?
+}
+
+nonisolated struct GoalTodoInput: Equatable, Sendable {
+    let id: Int64
+    let goalID: Int64
+    let name: String
+    let createTs: Date?
+    let status: GoalTodoStatus
+    let statusTs: Date?
+    let repeating: Bool
+    let repeatTemplateID: Int64?
+    let targetDate: Date?
+    let dailyTargetSeconds: Int?
+}
+
+nonisolated struct GoalTodoCandidate: Equatable, Sendable {
+    let todo: GoalTodoRecord
+    let goal: GoalRecord
+
+    var embeddingText: String {
+        [
+            Optional("Goal: \(goal.name)"),
+            goal.description.map { "Description: \($0)" },
+            Optional("Todo: \(todo.name)")
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n")
+    }
+}
+
+nonisolated struct GoalTodoRollup: Codable, Equatable, FetchableRecord, Sendable {
+    let todoID: Int64
+    let duration: Int
+
+    enum CodingKeys: String, CodingKey {
+        case todoID = "todo_id"
+        case duration
+    }
+}
+
+nonisolated struct GoalRollup: Codable, Equatable, FetchableRecord, Sendable {
+    let goalID: Int64
+    let duration: Int
+
+    enum CodingKeys: String, CodingKey {
+        case goalID = "goal_id"
+        case duration
+    }
+}
+
+nonisolated struct DailyGoalDuration: Codable, Equatable, FetchableRecord, Sendable {
+    let goalID: Int64
+    let day: Date
+    let duration: Int
+
+    enum CodingKeys: String, CodingKey {
+        case goalID = "goal_id"
+        case day
+        case duration
+    }
+}
+
+nonisolated struct DailyCompletedTodoCount: Codable, Equatable, FetchableRecord, Sendable {
+    let goalID: Int64
+    let day: Date
+    let completedCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case goalID = "goal_id"
+        case day
+        case completedCount = "completed_count"
+    }
+}
+
+nonisolated struct GoalActivityAssignment: Codable, Equatable, FetchableRecord, Sendable, Identifiable {
+    let id: Int64
+    let startTime: Date
+    let application: String
+    let summary: String?
+    let goalTodoID: Int64?
+    let duration: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case startTime = "start_time"
+        case application
+        case summary
+        case goalTodoID = "goal_todo_id"
+        case duration
+    }
+}
+
+nonisolated struct GoalsSnapshot: Equatable, Sendable {
+    let goals: [GoalRecord]
+    let todos: [GoalTodoRecord]
+    let goalRollups: [GoalRollup]
+    let todoRollups: [GoalTodoRollup]
+    let dailyGoalDurations: [DailyGoalDuration]
+    let dailyCompletedTodoCounts: [DailyCompletedTodoCount]
 }
 
 struct ScreenshotRecord: Codable, Equatable, FetchableRecord, PersistableRecord, TableRecord, Sendable {
@@ -1291,6 +1469,9 @@ nonisolated struct LoadedActivity: Equatable, Sendable {
     let tagAssignmentSource: ActivityTagAssignmentSource?
     let ontologyCandidateID: Int64?
     let overviewAssignmentSource: OverviewAssignmentSource?
+    let goalTodoID: Int64?
+    let goalTodoAssignmentSource: GoalTodoAssignmentSource?
+    let goalTodoAssignmentScore: Double?
     var screenshots: [LoadedScreenshot]
 
     init(
@@ -1305,6 +1486,9 @@ nonisolated struct LoadedActivity: Equatable, Sendable {
         ontologyCandidateID: Int64?,
         overviewAssignmentSource: OverviewAssignmentSource? = nil,
         overviewID: Int64?,
+        goalTodoID: Int64? = nil,
+        goalTodoAssignmentSource: GoalTodoAssignmentSource? = nil,
+        goalTodoAssignmentScore: Double? = nil,
         screenshots: [LoadedScreenshot]
     ) {
         self.id = id
@@ -1318,6 +1502,9 @@ nonisolated struct LoadedActivity: Equatable, Sendable {
         self.ontologyCandidateID = ontologyCandidateID
         self.overviewAssignmentSource = overviewAssignmentSource
         self.overviewID = overviewID
+        self.goalTodoID = goalTodoID
+        self.goalTodoAssignmentSource = goalTodoAssignmentSource
+        self.goalTodoAssignmentScore = goalTodoAssignmentScore
         self.screenshots = screenshots
     }
 }

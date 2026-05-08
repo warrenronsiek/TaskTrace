@@ -51,9 +51,23 @@
 		79E100012FA1000000E542A7 /* TaskTraceMCPHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = TaskTraceMCPHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		79B371292FAD000000E542A7 /* Exceptions for "TaskTrace" folder in "TaskTrace" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				MCP/README.md,
+				Search/README.md,
+			);
+			target = 79B36F752F61FADF00E542A7 /* TaskTrace */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		79B36F782F61FADF00E542A7 /* TaskTrace */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				79B371292FAD000000E542A7 /* Exceptions for "TaskTrace" folder in "TaskTrace" target */,
+			);
 			path = TaskTrace;
 			sourceTree = "<group>";
 		};
@@ -531,7 +545,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1002000001;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = NYP8HPSQJD;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -578,7 +592,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1002000001;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = NYP8HPSQJD;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -664,7 +678,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1002000001;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = NYP8HPSQJD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -685,7 +699,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1002000001;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = NYP8HPSQJD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;

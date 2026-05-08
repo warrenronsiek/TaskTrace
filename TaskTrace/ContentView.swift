@@ -21,6 +21,7 @@ struct ContentView: View {
     @ObservedObject var aiStatsStore: AIStatsStore
     @ObservedObject var calendarStore: CalendarStore
     @ObservedObject var analyticsStore: AnalyticsStore
+    @ObservedObject var goalsStore: GoalsStore
     @ObservedObject var agentActionsStore: AgentActionsStore
     @ObservedObject var tagsStore: TagsStore
     @ObservedObject var settingsStore: SettingsStore
@@ -87,6 +88,7 @@ struct ContentView: View {
                     ActivityView(
                         activityStore: activityStore,
                         tagsStore: tagsStore,
+                        goalsStore: goalsStore,
                         onShowTimelineForActivity: { activityID, activityDate in
                             timelineActivityIDToReveal = activityID
                             timelineFocusDate = activityDate
@@ -113,6 +115,8 @@ struct ContentView: View {
                     } else {
                         TagsView(tagsStore: tagsStore)
                     }
+                case .goals:
+                    GoalsView(goalsStore: goalsStore)
                 case .knowledge:
                     KnowledgeGraphView(
                         knowledgeGraphStore: knowledgeGraphStore,
@@ -408,6 +412,7 @@ extension ContentView {
         case activity
         case calendar
         case analytics
+        case goals
         case stats
         case search
         case knowledge
@@ -421,7 +426,7 @@ extension ContentView {
         }
 
         static func sidebarPages(bundleIdentifier: String) -> [AppPage] {
-            [.activity, .calendar, .analytics, .stats, .search, .knowledge, .agents, .settings]
+            [.activity, .calendar, .goals, .analytics, .stats, .search, .knowledge, .agents, .settings]
         }
 
         var title: String {
@@ -438,6 +443,8 @@ extension ContentView {
                 "Timeline"
             case .analytics:
                 "Analytics"
+            case .goals:
+                "Goals"
             case .stats:
                 "Stats"
             case .settings:
@@ -459,6 +466,8 @@ extension ContentView {
                 "clock.arrow.circlepath"
             case .analytics:
                 "chart.bar.xaxis"
+            case .goals:
+                "target"
             case .stats:
                 "waveform.path.ecg.rectangle"
             case .settings:
@@ -787,6 +796,53 @@ struct ContentView_Previews: PreviewProvider {
                     )
                 ],
                 selectedTags: []
+            ),
+            goalsStore: GoalsStore(
+                previewSnapshot: GoalsSnapshot(
+                    goals: [
+                        GoalRecord(
+                            id: 1,
+                            name: "Ship open source release",
+                            description: "Finish the public repo cutover and release checks.",
+                            createTs: Date(),
+                            doneTs: nil,
+                            deleteTs: nil
+                        )
+                    ],
+                    todos: [
+                        GoalTodoRecord(
+                            id: 1,
+                            goalID: 1,
+                            name: "Review release blockers",
+                            createTs: Date(),
+                            doneTs: nil,
+                            status: .open,
+                            statusTs: nil,
+                            repeating: false,
+                            repeatTemplateID: nil,
+                            targetDate: nil,
+                            dailyTargetSeconds: 3_600,
+                            embedding: nil,
+                            deleteTs: nil
+                        )
+                    ],
+                    goalRollups: [GoalRollup(goalID: 1, duration: 2_400)],
+                    todoRollups: [GoalTodoRollup(todoID: 1, duration: 2_400)],
+                    dailyGoalDurations: [
+                        DailyGoalDuration(
+                            goalID: 1,
+                            day: Calendar.current.startOfDay(for: Date()),
+                            duration: 2_400
+                        )
+                    ],
+                    dailyCompletedTodoCounts: [
+                        DailyCompletedTodoCount(
+                            goalID: 1,
+                            day: Calendar.current.startOfDay(for: Date()),
+                            completedCount: 1
+                        )
+                    ]
+                )
             ),
             agentActionsStore: AgentActionsStore(
                 previewAgentActions: [

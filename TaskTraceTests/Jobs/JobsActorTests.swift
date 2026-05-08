@@ -21,8 +21,17 @@ struct JobsActorTests {
         }
     }
 
-    @Test("starting the jobs actor broadcasts both due daily job requests")
-    func startingTheJobsActorBroadcastsBothDueDailyJobRequests() async throws {
+    @Test("initializing the jobs database actor seeds the GoalTodoDailyMaintenance job row")
+    func initializingTheJobsDatabaseActorSeedsTheGoalTodoDailyMaintenanceJobRow() async throws {
+        try await withJobsActor { jobsActor, jobsDatabaseActor, _, _, _ in
+            _ = jobsActor
+            let maintenanceJob = try await jobsDatabaseActor.loadJob(named: .goalTodoDailyMaintenance)
+            #expect(maintenanceJob != nil)
+        }
+    }
+
+    @Test("starting the jobs actor broadcasts due daily job requests")
+    func startingTheJobsActorBroadcastsDueDailyJobRequests() async throws {
         try await withJobsActor(
             jobs: [
                 JobInput(
@@ -33,7 +42,7 @@ struct JobsActorTests {
             ]
         ) { jobsActor, _, _, recordingReceiver, _ in
             await jobsActor.start()
-            #expect(Set(await recordingReceiver.requestedJobs()) == Set([.activityUMAP, .activityTagOntologyRefresh]))
+            #expect(Set(await recordingReceiver.requestedJobs()) == Set([.activityUMAP, .activityTagOntologyRefresh, .goalTodoDailyMaintenance]))
         }
     }
 

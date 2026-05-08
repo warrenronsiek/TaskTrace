@@ -11,6 +11,7 @@ import GRDB
 nonisolated enum TaskTraceJobName: String, CaseIterable, Codable, Sendable {
     case activityUMAP = "ActivityUMAP"
     case activityTagOntologyRefresh = "ActivityTagOntologyRefresh"
+    case goalTodoDailyMaintenance = "GoalTodoDailyMaintenance"
 
     var definition: JobDefinition {
         switch self {
@@ -32,6 +33,17 @@ nonisolated enum TaskTraceJobName: String, CaseIterable, Codable, Sendable {
                     JobDailyPolicy(
                         hour: 0,
                         minute: 10
+                    )
+                ),
+                enabled: true
+            )
+        case .goalTodoDailyMaintenance:
+            JobDefinition(
+                name: self,
+                schedule: .daily(
+                    JobDailyPolicy(
+                        hour: 0,
+                        minute: 20
                     )
                 ),
                 enabled: true

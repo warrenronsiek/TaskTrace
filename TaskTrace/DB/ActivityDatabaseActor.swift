@@ -379,6 +379,9 @@ actor ActivityDatabaseActor: Receiver {
                         a.ontology_candidate_id AS a_ontology_candidate_id,
                         a.overview_id AS a_overview_id,
                         a.overview_assignment_source AS a_overview_assignment_source,
+                        a.goal_todo_id AS a_goal_todo_id,
+                        a.goal_todo_assignment_source AS a_goal_todo_assignment_source,
+                        a.goal_todo_assignment_score AS a_goal_todo_assignment_score,
                         s.id AS s_id,
                         s.ts AS s_ts,
                         s.description AS s_description,
@@ -414,6 +417,10 @@ actor ActivityDatabaseActor: Receiver {
                         overviewAssignmentSource: (row["a_overview_assignment_source"] as String?)
                             .flatMap(OverviewAssignmentSource.init(rawValue:)),
                         overviewID: row["a_overview_id"],
+                        goalTodoID: row["a_goal_todo_id"],
+                        goalTodoAssignmentSource: (row["a_goal_todo_assignment_source"] as String?)
+                            .flatMap(GoalTodoAssignmentSource.init(rawValue:)),
+                        goalTodoAssignmentScore: row["a_goal_todo_assignment_score"],
                         screenshots: []
                     )
                 }

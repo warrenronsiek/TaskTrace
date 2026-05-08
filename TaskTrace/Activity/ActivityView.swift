@@ -16,9 +16,19 @@ private struct ActivityTagChoice: Identifiable {
     let title: String
 }
 
+private struct ActivityGoalTodoGroup: Identifiable {
+    let goal: GoalRecord
+    let todos: [GoalTodoRecord]
+
+    var id: Int64 {
+        goal.id
+    }
+}
+
 struct ActivityView: View {
     @ObservedObject var activityStore: ActivityStore
     @ObservedObject var tagsStore: TagsStore
+    @ObservedObject var goalsStore: GoalsStore
     let onShowTimelineForActivity: (Int64, Date) -> Void
 
     var body: some View {
@@ -50,6 +60,9 @@ struct ActivityView: View {
                                 activity: activity,
                                 tagName: tagName(for: activity.tagID),
                                 tagChoices: activityTagChoices,
+                                goalTodoGroups: activityGoalTodoGroups,
+                                currentGoalName: goalsStore.goalName(for: goalsStore.goalID(forTodoID: activity.goalTodoID)),
+                                currentTodoName: goalsStore.todoName(for: activity.goalTodoID),
                                 endTime: endTime(for: activity.id),
                                 duration: duration(for: activity.id),
                                 onShowTimelineForActivity: onShowTimelineForActivity,
@@ -58,6 +71,9 @@ struct ActivityView: View {
                                 },
                                 onSelectTag: { tagID in
                                     await activityStore.setTag(activityID: activity.id, tagID: tagID)
+                                },
+                                onSelectGoalTodo: { todoID in
+                                    await activityStore.setGoalTodo(activityID: activity.id, todoID: todoID)
                                 },
                                 onDelete: {
                                     await activityStore.deleteActivity(activityID: activity.id)
@@ -134,6 +150,18 @@ struct ActivityView: View {
             ActivityTagChoice(id: SystemTags.taggingFailureID, title: SystemTags.taggingFailureName)
         ] + userTagChoices
     }
+
+    private var activityGoalTodoGroups: [ActivityGoalTodoGroup] {
+        goalsStore.openGoals.compactMap { goal in
+            let todos = goalsStore.openTodos.filter { $0.goalID == goal.id }
+
+            guard !todos.isEmpty else {
+                return nil
+            }
+
+            return ActivityGoalTodoGroup(goal: goal, todos: todos)
+        }
+    }
 }
 
 private struct ActivityCard: View {
@@ -160,11 +188,15 @@ private struct ActivityCard: View {
     let activity: ActivityActor.Activity
     let tagName: String?
     let tagChoices: [ActivityTagChoice]
+    let goalTodoGroups: [ActivityGoalTodoGroup]
+    let currentGoalName: String?
+    let currentTodoName: String?
     let endTime: Date?
     let duration: TimeInterval?
     let onShowTimelineForActivity: (Int64, Date) -> Void
     let loadScreenshotImage: @MainActor @Sendable (Int64) async -> Data?
     let onSelectTag: @MainActor @Sendable (Int64?) async -> Void
+    let onSelectGoalTodo: @MainActor @Sendable (Int64?) async -> Void
     let onDelete: @MainActor @Sendable () async -> Void
     @State private var selectedPanel: Panel = .summary
 
@@ -229,6 +261,47 @@ private struct ActivityCard: View {
                 .pickerStyle(.menu)
                 .frame(width: 172, alignment: .leading)
                 .help(tagName ?? "No Tag")
+
+                Menu {
+                    Button("No Goal") {
+                        Task {
+                            await onSelectGoalTodo(nil)
+                        }
+                    }
+
+                    if !goalTodoGroups.isEmpty {
+                        Divider()
+                    }
+
+                    ForEach(goalTodoGroups) { group in
+                        Menu(group.goal.name) {
+                            ForEach(group.todos) { todo in
+                                Button(todo.name) {
+                                    Task {
+                                        await onSelectGoalTodo(todo.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if let currentTodoName,
+                       !goalTodoGroups.flatMap(\.todos).contains(where: { $0.id == activity.goalTodoID }) {
+                        Divider()
+                        Text("Archived: \(currentTodoName)")
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: activity.goalTodoID == nil ? "target" : "target")
+                            .font(Styles.Fonts.subheadlineSemibold)
+                        Text(currentTodoName ?? "No Goal")
+                            .lineLimit(1)
+                    }
+                    .frame(width: 172, alignment: .leading)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .help(currentGoalName.map { "\($0): \(currentTodoName ?? "No Todo")" } ?? "No Goal")
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(activity.startTime.formatted(date: .omitted, time: .shortened))

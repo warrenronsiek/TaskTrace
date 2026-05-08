@@ -182,6 +182,22 @@ final class ActivityStore: ObservableObject {
         )
     }
 
+    func setGoalTodo(activityID: Int64, todoID: Int64?) async {
+        logger.log("setting goal todo for activity: activityID=\(activityID, privacy: .public) todoID=\(String(describing: todoID), privacy: .public)")
+        guard let actorSystem else {
+            return
+        }
+
+        await actorSystem.broadcast(
+            from: nil,
+            message: ActivityGoalTodoSet(
+                mutationID: UUID(),
+                activityID: activityID,
+                todoID: todoID
+            )
+        )
+    }
+
     func deleteActivity(activityID: Int64) async {
         logger.log("deleting activity: activityID=\(activityID, privacy: .public)")
         if let actorSystem {

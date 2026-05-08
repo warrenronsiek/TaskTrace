@@ -247,6 +247,7 @@ struct TaskTraceApp: App {
     let calendarStore: CalendarStore?
     let tagsStore: TagsStore?
     let analyticsStore: AnalyticsStore?
+    let goalsStore: GoalsStore?
     let agentActionActor: AgentActionActor?
     let agentChannelActor: AgentChannelActor?
     let agentActionsStore: AgentActionsStore?
@@ -288,6 +289,7 @@ struct TaskTraceApp: App {
             self.calendarStore = nil
             self.tagsStore = nil
             self.analyticsStore = nil
+            self.goalsStore = nil
             self.agentActionActor = nil
             self.agentChannelActor = nil
             self.agentActionsStore = nil
@@ -319,6 +321,7 @@ struct TaskTraceApp: App {
 
         let settingsDatabaseActor = SettingsDatabaseActor(database: database)
         let tagsDatabaseActor = TagsDatabaseActor(database: database)
+        let goalsDatabaseActor = GoalsDatabaseActor(database: database)
         let searchDatabaseActor = SearchDatabaseActor(database: database)
         let analyticsDatabaseActor = AnalyticsDatabaseActor(database: database)
         let calendarDatabaseActor = CalendarDatabaseActor(database: database)
@@ -340,6 +343,11 @@ struct TaskTraceApp: App {
         let activityTagOntologyActor = ActivityTagOntologyActor(
             actorSystem: actorSystem,
             activityDatabaseActor: activityDatabaseActor
+        )
+        let goalTodoEmbeddingActor = GoalTodoEmbeddingActor(actorSystem: actorSystem)
+        let goalTodoActor = GoalTodoActor(
+            goalsDatabaseActor: goalsDatabaseActor,
+            actorSystem: actorSystem
         )
         let describeImageActor = DescribeImageActor(actorSystem: actorSystem)
         let readScreenshotTextActor = ReadScreenshotTextActor(actorSystem: actorSystem)
@@ -448,6 +456,10 @@ struct TaskTraceApp: App {
         )
         let calendarStore = CalendarStore(calendarDatabaseActor: calendarDatabaseActor, activityStore: activityStore, overviewStore: overviewStore, now: Date.init, calendar: Calendar(identifier: .gregorian))
         let tagsStore = TagsStore(tagsDatabaseActor: tagsDatabaseActor)
+        let goalsStore = GoalsStore(
+            goalsDatabaseActor: goalsDatabaseActor,
+            actorSystem: actorSystem
+        )
         let analyticsStore = AnalyticsStore(analyticsDatabaseActor: analyticsDatabaseActor, now: Date.init, calendar: Calendar(identifier: .gregorian))
         let agentActionsStore = AgentActionsStore(agentActionsDatabaseActor: agentActionsDatabaseActor, agentChannelActor: agentChannelActor)
         let navigationStore = TaskTraceNavigationStore()
@@ -494,6 +506,7 @@ struct TaskTraceApp: App {
         }
         let loadForegroundStores = { @MainActor @Sendable () async in
             await tagsStore.load()
+            await goalsStore.load()
             await activityStore.loadActiveDay()
             await overviewStore.loadActiveDay()
             await calendarStore.loadAvailableDates()
@@ -530,6 +543,7 @@ struct TaskTraceApp: App {
         self.calendarStore = calendarStore
         self.tagsStore = tagsStore
         self.analyticsStore = analyticsStore
+        self.goalsStore = goalsStore
         self.agentActionActor = agentActionActor
         self.agentChannelActor = agentChannelActor
         self.agentActionsStore = agentActionsStore
@@ -610,6 +624,8 @@ struct TaskTraceApp: App {
         let bootstrapKnowledgeObsidianWriterActor = knowledgeObsidianWriterActor
         let bootstrapKnowledgeClaimEmbeddingActor = knowledgeClaimEmbeddingActor
         let bootstrapActivityUMAPActor = activityUMAPActor
+        let bootstrapGoalTodoEmbeddingActor = goalTodoEmbeddingActor
+        let bootstrapGoalTodoActor = goalTodoActor
         let bootstrapJobsActor = jobsActor
         let runCurrentDayOntologyCatchUp = { @MainActor @Sendable () async in
             let logger = Logger(subsystem: "com.tasktrace.TaskTrace", category: "ontology-startup")
@@ -706,6 +722,8 @@ struct TaskTraceApp: App {
                     knowledgeClaimEmbeddingActor: bootstrapKnowledgeClaimEmbeddingActor
                 )
                 _ = await bootstrapActorSystem.register(bootstrapActivityUMAPActor)
+                _ = await bootstrapActorSystem.register(bootstrapGoalTodoEmbeddingActor)
+                _ = await bootstrapActorSystem.register(bootstrapGoalTodoActor)
                 _ = await bootstrapActorSystem.register(bootstrapJobsActor)
                 await bootstrapJobsActor.start()
             }
@@ -767,6 +785,7 @@ struct TaskTraceApp: App {
                    let aiStatsStore,
                    let calendarStore,
                    let analyticsStore,
+                   let goalsStore,
                    let agentActionsStore,
                    let tagsStore,
                    let settingsStore,
@@ -782,6 +801,7 @@ struct TaskTraceApp: App {
                         aiStatsStore: aiStatsStore,
                         calendarStore: calendarStore,
                         analyticsStore: analyticsStore,
+                        goalsStore: goalsStore,
                         agentActionsStore: agentActionsStore,
                         tagsStore: tagsStore,
                         settingsStore: settingsStore,

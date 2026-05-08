@@ -27,6 +27,9 @@ actor ActivityActor: Receiver {
         var tagID: Int64?
         var tagAssignmentSource: ActivityTagAssignmentSource? = nil
         var ontologyCandidateID: Int64? = nil
+        var goalTodoID: Int64? = nil
+        var goalTodoAssignmentSource: GoalTodoAssignmentSource? = nil
+        var goalTodoAssignmentScore: Double? = nil
         var screenshots: [Screenshot]
     }
 
@@ -90,6 +93,12 @@ actor ActivityActor: Receiver {
     private var lastApplicationActivationAt: Date?
     private var loadedDay: Date?
     private var pendingScreenshotSummaryIDs: Set<Int64> = []
+    private var pendingGoalTodoAssignments: [UUID: (
+        activityID: Int64,
+        goalTodoID: Int64?,
+        source: GoalTodoAssignmentSource?,
+        score: Double?
+    )] = [:]
 
     init(
         activityDatabaseActor: ActivityDatabaseActor,
@@ -236,6 +245,52 @@ actor ActivityActor: Receiver {
 
             activities[activityIndex].tagID = event.tagID
             activities[activityIndex].tagAssignmentSource = event.tagID == nil ? nil : .manual
+            broadcast()
+        case let event as GoalTodoAssigned:
+            logger.log(
+                "activity-actor received goal-todo-assigned sender=\(envelope.sender?.uuidString ?? "<nil>", privacy: .public) activityID=\(event.activityID, privacy: .public) todoID=\(event.todoID, privacy: .public)"
+            )
+            guard let activityIndex = activities.firstIndex(where: { $0.id == event.activityID }),
+                  activities[activityIndex].goalTodoAssignmentSource != .manual else {
+                return
+            }
+
+            activities[activityIndex].goalTodoID = event.todoID
+            activities[activityIndex].goalTodoAssignmentSource = .automatic
+            activities[activityIndex].goalTodoAssignmentScore = event.score
+            broadcast()
+        case let event as ActivityGoalTodoSet:
+            logger.log(
+                "activity-actor received activity-goal-todo-set sender=\(envelope.sender?.uuidString ?? "<nil>", privacy: .public) activityID=\(event.activityID, privacy: .public) todoID=\(event.todoID.map(String.init) ?? "<nil>", privacy: .public)"
+            )
+            guard let activityIndex = activities.firstIndex(where: { $0.id == event.activityID }) else {
+                return
+            }
+
+            pendingGoalTodoAssignments[event.mutationID] = (
+                activityID: event.activityID,
+                goalTodoID: activities[activityIndex].goalTodoID,
+                source: activities[activityIndex].goalTodoAssignmentSource,
+                score: activities[activityIndex].goalTodoAssignmentScore
+            )
+            activities[activityIndex].goalTodoID = event.todoID
+            activities[activityIndex].goalTodoAssignmentSource = event.todoID == nil ? nil : .manual
+            activities[activityIndex].goalTodoAssignmentScore = nil
+            broadcast()
+        case let event as ActivityGoalTodoPersistenceSucceeded:
+            pendingGoalTodoAssignments.removeValue(forKey: event.mutationID)
+        case let event as ActivityGoalTodoPersistenceFailed:
+            logger.log(
+                "activity-actor received activity-goal-todo-persistence-failed sender=\(envelope.sender?.uuidString ?? "<nil>", privacy: .public) activityID=\(event.activityID, privacy: .public)"
+            )
+            guard let pending = pendingGoalTodoAssignments.removeValue(forKey: event.mutationID),
+                  let activityIndex = activities.firstIndex(where: { $0.id == pending.activityID }) else {
+                return
+            }
+
+            activities[activityIndex].goalTodoID = pending.goalTodoID
+            activities[activityIndex].goalTodoAssignmentSource = pending.source
+            activities[activityIndex].goalTodoAssignmentScore = pending.score
             broadcast()
         case let event as OverviewTagSetRequested:
             logger.log(
@@ -425,6 +480,7 @@ actor ActivityActor: Receiver {
             summary: nil,
             overviewID: nil,
             tagID: nil,
+            goalTodoID: nil,
             screenshots: [
                 Screenshot(
                     id: screenshotID,
@@ -539,6 +595,7 @@ actor ActivityActor: Receiver {
             summary: nil,
             overviewID: nil,
             tagID: nil,
+            goalTodoID: nil,
             screenshots: []
         )
         activities.append(pauseActivity)
@@ -788,6 +845,9 @@ actor ActivityActor: Receiver {
                 tagID: loadedActivity.tagID,
                 tagAssignmentSource: loadedActivity.tagAssignmentSource,
                 ontologyCandidateID: loadedActivity.ontologyCandidateID,
+                goalTodoID: loadedActivity.goalTodoID,
+                goalTodoAssignmentSource: loadedActivity.goalTodoAssignmentSource,
+                goalTodoAssignmentScore: loadedActivity.goalTodoAssignmentScore,
                 screenshots: loadedActivity.screenshots.map { loadedScreenshot in
                     Screenshot(
                         id: loadedScreenshot.id,

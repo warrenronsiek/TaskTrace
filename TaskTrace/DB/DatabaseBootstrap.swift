@@ -37,7 +37,7 @@ enum TaskTraceDatabaseBootstrap {
     nonisolated static let activitySummaryVectorIndexTableName = "activity_summary_vector_index"
     nonisolated static let activitySummaryVectorIndexDirtyIDsTableName = "activity_summary_vector_index_dirty_ids"
     nonisolated static let activitySummaryVectorIndexSchemaVersion = 34
-    nonisolated static let currentVersion = 44
+    nonisolated static let currentVersion = 45
 
     nonisolated static func resolvedDatabaseURL(
         _ databaseURL: URL?,
@@ -1929,6 +1929,109 @@ enum TaskTraceDatabaseBootstrap {
 
             try db.execute(sql: "DELETE FROM versions")
             try db.execute(sql: "INSERT INTO versions (version) VALUES (44)")
+        }
+
+        migrator.registerMigration("v45_add_goals") { db in
+            try db.create(table: "goals", ifNotExists: true) { t in
+                t.column("id", .integer).primaryKey()
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("create_ts", .datetime).notNull()
+                t.column("done_ts", .datetime)
+            }
+
+            try db.create(table: "goal_todos", ifNotExists: true) { t in
+                t.column("id", .integer).primaryKey()
+                t.column("goal_id", .integer).notNull().references("goals", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("create_ts", .datetime).notNull()
+                t.column("done_ts", .datetime)
+                t.column("status", .text).notNull().defaults(to: "open")
+                t.column("status_ts", .datetime)
+                t.column("repeating", .boolean).notNull().defaults(to: false)
+                t.column("repeat_template_id", .integer).references("goal_todos", onDelete: .cascade)
+                t.column("target_date", .date)
+                t.column("daily_target_seconds", .integer)
+                t.column("embedding", .blob)
+            }
+
+            let activityColumns = try db.columns(in: "activities").map(\.name)
+
+            if !activityColumns.contains("goal_todo_id") {
+                try db.execute(
+                    sql: """
+                        ALTER TABLE activities
+                        ADD COLUMN goal_todo_id INTEGER REFERENCES goal_todos(id) ON DELETE SET NULL
+                        """
+                )
+            }
+
+            if !activityColumns.contains("goal_todo_assignment_source") {
+                try db.execute(sql: "ALTER TABLE activities ADD COLUMN goal_todo_assignment_source TEXT")
+            }
+
+            if !activityColumns.contains("goal_todo_assignment_score") {
+                try db.execute(sql: "ALTER TABLE activities ADD COLUMN goal_todo_assignment_score REAL")
+            }
+
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goals_open
+                    ON goals(done_ts, create_ts)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goal_todos_goal_status
+                    ON goal_todos(goal_id, status, target_date)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_todos_repeat_instance
+                    ON goal_todos(repeat_template_id, target_date)
+                    WHERE repeat_template_id IS NOT NULL
+                      AND target_date IS NOT NULL
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_activities_goal_todo
+                    ON activities(goal_todo_id, start_time)
+                    """
+            )
+
+            try db.execute(sql: "DELETE FROM versions")
+            try db.execute(sql: "INSERT INTO versions (version) VALUES (45)")
+        }
+
+        migrator.registerMigration("v46_add_goal_soft_deletes") { db in
+            let goalColumns = try db.columns(in: "goals").map(\.name)
+            let todoColumns = try db.columns(in: "goal_todos").map(\.name)
+
+            if !goalColumns.contains("delete_ts") {
+                try db.execute(sql: "ALTER TABLE goals ADD COLUMN delete_ts DATETIME")
+            }
+
+            if !todoColumns.contains("delete_ts") {
+                try db.execute(sql: "ALTER TABLE goal_todos ADD COLUMN delete_ts DATETIME")
+            }
+
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goals_visible
+                    ON goals(delete_ts, done_ts, create_ts)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goal_todos_visible
+                    ON goal_todos(delete_ts, goal_id, status, target_date)
+                    """
+            )
+
+            try db.execute(sql: "DELETE FROM versions")
+            try db.execute(sql: "INSERT INTO versions (version) VALUES (46)")
         }
 
         return migrator
