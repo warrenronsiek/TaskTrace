@@ -950,6 +950,13 @@ nonisolated enum GoalTodoStatus: String, CaseIterable, Codable, Sendable {
     case failed
 }
 
+nonisolated enum GoalTodoTargetMode: String, CaseIterable, Codable, Sendable, Identifiable {
+    case minimum
+    case maximum
+
+    var id: String { rawValue }
+}
+
 nonisolated enum GoalTodoAssignmentSource: String, Codable, Sendable {
     case automatic = "auto"
     case manual
@@ -979,7 +986,7 @@ nonisolated struct GoalTodoRecord: Codable, Equatable, FetchableRecord, Persista
     static let databaseTableName = "goal_todos"
 
     let id: Int64
-    let goalID: Int64
+    let goalID: Int64?
     let name: String
     let createTs: Date
     let doneTs: Date?
@@ -989,6 +996,7 @@ nonisolated struct GoalTodoRecord: Codable, Equatable, FetchableRecord, Persista
     let repeatTemplateID: Int64?
     let targetDate: Date?
     let dailyTargetSeconds: Int?
+    var dailyTargetMode: GoalTodoTargetMode = .minimum
     let embedding: Data?
     let deleteTs: Date?
 
@@ -1004,6 +1012,7 @@ nonisolated struct GoalTodoRecord: Codable, Equatable, FetchableRecord, Persista
         case repeatTemplateID = "repeat_template_id"
         case targetDate = "target_date"
         case dailyTargetSeconds = "daily_target_seconds"
+        case dailyTargetMode = "daily_target_mode"
         case embedding
         case deleteTs = "delete_ts"
     }
@@ -1019,7 +1028,7 @@ nonisolated struct GoalInput: Equatable, Sendable {
 
 nonisolated struct GoalTodoInput: Equatable, Sendable {
     let id: Int64
-    let goalID: Int64
+    let goalID: Int64?
     let name: String
     let createTs: Date?
     let status: GoalTodoStatus
@@ -1028,21 +1037,12 @@ nonisolated struct GoalTodoInput: Equatable, Sendable {
     let repeatTemplateID: Int64?
     let targetDate: Date?
     let dailyTargetSeconds: Int?
+    var dailyTargetMode: GoalTodoTargetMode = .minimum
 }
 
 nonisolated struct GoalTodoCandidate: Equatable, Sendable {
     let todo: GoalTodoRecord
-    let goal: GoalRecord
-
-    var embeddingText: String {
-        [
-            Optional("Goal: \(goal.name)"),
-            goal.description.map { "Description: \($0)" },
-            Optional("Todo: \(todo.name)")
-        ]
-        .compactMap { $0 }
-        .joined(separator: "\n")
-    }
+    let goal: GoalRecord?
 }
 
 nonisolated struct GoalTodoRollup: Codable, Equatable, FetchableRecord, Sendable {
@@ -1078,7 +1078,7 @@ nonisolated struct DailyGoalDuration: Codable, Equatable, FetchableRecord, Senda
 }
 
 nonisolated struct DailyCompletedTodoCount: Codable, Equatable, FetchableRecord, Sendable {
-    let goalID: Int64
+    let goalID: Int64?
     let day: Date
     let completedCount: Int
 

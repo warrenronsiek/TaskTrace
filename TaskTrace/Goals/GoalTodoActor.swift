@@ -12,22 +12,16 @@ actor GoalTodoActor: Receiver {
     private let goalsDatabaseActor: GoalsDatabaseActor
     private let actorSystem: ActorSystem
     private let now: @Sendable () -> Date
-    private let minimumSimilarity: Double
-    private let minimumMargin: Double
     private let logger = Logger(subsystem: "com.tasktrace.TaskTrace", category: "goals")
 
     init(
         goalsDatabaseActor: GoalsDatabaseActor,
         actorSystem: ActorSystem,
-        now: @escaping @Sendable () -> Date = Date.init,
-        minimumSimilarity: Double = 0.76,
-        minimumMargin: Double = 0.05
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.goalsDatabaseActor = goalsDatabaseActor
         self.actorSystem = actorSystem
         self.now = now
-        self.minimumSimilarity = minimumSimilarity
-        self.minimumMargin = minimumMargin
     }
 
     func receive(_ envelope: Envelope) async {
@@ -60,15 +54,7 @@ actor GoalTodoActor: Receiver {
             Task {
                 await self.assignActivity(event)
             }
-        case let event as GoalTodoEmbedded:
-            Task {
-                await self.persistEmbedding(event)
-            }
-        case let request as GoalEmbeddingRefreshRequested:
-            Task {
-                await self.requestGoalEmbeddings(goalID: request.goalID)
-            }
-        case let event as ActivitySummaryEmbedded:
+        case let event as GoalTodoAssignmentDecided:
             Task {
                 await self.assign(event)
             }
@@ -85,7 +71,6 @@ actor GoalTodoActor: Receiver {
         do {
             try await goalsDatabaseActor.saveGoal(event.goal)
             await actorSystem.broadcast(from: nil, message: GoalMutationPersisted(mutationID: event.mutationID))
-            await requestGoalEmbeddings(goalID: event.goal.id)
             await actorSystem.broadcast(from: nil, message: GoalsReloadRequested())
         } catch {
             await failGoalMutation(event.mutationID, error)
@@ -116,7 +101,6 @@ actor GoalTodoActor: Receiver {
         do {
             try await goalsDatabaseActor.saveTodo(event.todo)
             await actorSystem.broadcast(from: nil, message: GoalMutationPersisted(mutationID: event.mutationID))
-            await requestTodoEmbedding(todoID: event.todo.id)
             await actorSystem.broadcast(from: nil, message: GoalsReloadRequested())
         } catch {
             await failGoalMutation(event.mutationID, error)
@@ -176,70 +160,30 @@ actor GoalTodoActor: Receiver {
         }
     }
 
-    private func persistEmbedding(_ event: GoalTodoEmbedded) async {
-        do {
-            try await goalsDatabaseActor.saveTodoEmbedding(
-                todoID: event.todoID,
-                vector: event.vector
-            )
-        } catch {
-            logger.error(
-                "goal-todo-actor failed operation=save-embedding todoID=\(event.todoID, privacy: .public) error=\(String(describing: error), privacy: .public)"
-            )
+    private func assign(_ event: GoalTodoAssignmentDecided) async {
+        guard let todoID = event.todoID else {
+            return
         }
-    }
 
-    private func requestGoalEmbeddings(goalID: Int64) async {
         do {
-            for candidate in try await goalsDatabaseActor.loadTodoCandidates(goalID: goalID) {
-                await actorSystem.broadcast(
-                    from: nil,
-                    message: GoalTodoEmbeddingRequested(
-                        todoID: candidate.todo.id,
-                        embeddingText: candidate.embeddingText
-                    )
-                )
-            }
-        } catch {
-            logger.error(
-                "goal-todo-actor failed operation=request-goal-embeddings goalID=\(goalID, privacy: .public) error=\(String(describing: error), privacy: .public)"
+            let didAssign = try await goalsDatabaseActor.assignActivityAutomatically(
+                activityID: event.activityID,
+                todoID: todoID,
+                now: now()
             )
-        }
-    }
 
-    private func requestTodoEmbedding(todoID: Int64) async {
-        do {
-            guard let candidate = try await goalsDatabaseActor.loadTodoCandidate(id: todoID) else {
+            guard didAssign else {
                 return
             }
 
             await actorSystem.broadcast(
                 from: nil,
-                message: GoalTodoEmbeddingRequested(
-                    todoID: candidate.todo.id,
-                    embeddingText: candidate.embeddingText
+                message: GoalTodoAssigned(
+                    activityID: event.activityID,
+                    todoID: todoID,
+                    score: nil
                 )
             )
-        } catch {
-            logger.error(
-                "goal-todo-actor failed operation=request-todo-embedding todoID=\(todoID, privacy: .public) error=\(String(describing: error), privacy: .public)"
-            )
-        }
-    }
-
-    private func assign(_ event: ActivitySummaryEmbedded) async {
-        do {
-            guard let assignment = try await goalsDatabaseActor.assignBestOpenTodo(
-                activityID: event.activityID,
-                vector: event.vector,
-                minimumSimilarity: minimumSimilarity,
-                minimumMargin: minimumMargin,
-                now: now()
-            ) else {
-                return
-            }
-
-            await actorSystem.broadcast(from: nil, message: assignment)
             await actorSystem.broadcast(from: nil, message: GoalsReloadRequested())
         } catch {
             logger.error(

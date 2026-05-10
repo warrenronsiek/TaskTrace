@@ -846,6 +846,7 @@ nonisolated enum AITextModelLanePolicy {
 
     private static let smallSources: Set<String> = [
         "activity-summary",
+        "activity-goal-todo-assignment",
         "screenshot-summary",
         "overview-merge",
         "activity-tag-ontology-summary",

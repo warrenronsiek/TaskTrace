@@ -49,24 +49,15 @@ struct GoalMutationFailed: Sendable {
     let errorMessage: String
 }
 
-struct GoalTodoEmbeddingRequested: Sendable {
-    let todoID: Int64
-    let embeddingText: String
-}
-
-struct GoalTodoEmbedded: Sendable {
-    let todoID: Int64
-    let vector: [Float]
-}
-
-struct GoalEmbeddingRefreshRequested: Sendable {
-    let goalID: Int64
-}
-
 struct GoalTodoAssigned: Sendable {
     let activityID: Int64
     let todoID: Int64
     let score: Double?
+}
+
+struct GoalTodoAssignmentDecided: Sendable {
+    let activityID: Int64
+    let todoID: Int64?
 }
 
 struct ActivityGoalTodoSet: Sendable {

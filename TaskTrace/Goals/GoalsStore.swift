@@ -12,6 +12,7 @@ import SwiftUI
 nonisolated struct GoalTodoProgress: Equatable, Sendable {
     let duration: Int
     let target: Int?
+    let targetMode: GoalTodoTargetMode
     let ratio: Double
     let overflowRatio: Double
 }
@@ -21,6 +22,7 @@ final class GoalsStore: ObservableObject {
     @Published private(set) var snapshot: GoalsSnapshot
     @Published private(set) var isAddingGoal: Bool
     @Published private(set) var addingTodoGoalID: Int64?
+    @Published private(set) var isAddingStandaloneTodo: Bool
     @Published private(set) var editingGoalID: Int64?
     @Published private(set) var editingTodoID: Int64?
     @Published var goalName: String
@@ -28,6 +30,7 @@ final class GoalsStore: ObservableObject {
     @Published var todoName: String
     @Published var todoRepeating: Bool
     @Published var todoHasDailyTarget: Bool
+    @Published var todoDailyTargetMode: GoalTodoTargetMode
     @Published var todoDailyTargetMinutes: Double
     @Published private(set) var selectedDay: Date
     @Published private(set) var errorMessage: String?
@@ -64,6 +67,7 @@ final class GoalsStore: ObservableObject {
         )
         self.isAddingGoal = false
         self.addingTodoGoalID = nil
+        self.isAddingStandaloneTodo = false
         self.editingGoalID = nil
         self.editingTodoID = nil
         self.goalName = ""
@@ -71,6 +75,7 @@ final class GoalsStore: ObservableObject {
         self.todoName = ""
         self.todoRepeating = false
         self.todoHasDailyTarget = false
+        self.todoDailyTargetMode = .minimum
         self.todoDailyTargetMinutes = 30
         self.selectedDay = calendar.startOfDay(for: now())
         self.errorMessage = nil
@@ -96,6 +101,7 @@ final class GoalsStore: ObservableObject {
         self.snapshot = previewSnapshot
         self.isAddingGoal = false
         self.addingTodoGoalID = nil
+        self.isAddingStandaloneTodo = false
         self.editingGoalID = nil
         self.editingTodoID = nil
         self.goalName = ""
@@ -103,6 +109,7 @@ final class GoalsStore: ObservableObject {
         self.todoName = ""
         self.todoRepeating = false
         self.todoHasDailyTarget = false
+        self.todoDailyTargetMode = .minimum
         self.todoDailyTargetMinutes = 30
         self.selectedDay = Calendar(identifier: .gregorian).startOfDay(for: Date())
         self.errorMessage = nil
@@ -127,7 +134,10 @@ final class GoalsStore: ObservableObject {
         snapshot.todos.filter { todo in
             todo.status == .open
                 && todo.deleteTs == nil
-                && snapshot.goals.contains { $0.id == todo.goalID && $0.doneTs == nil && $0.deleteTs == nil }
+                && (
+                    todo.goalID == nil
+                    || snapshot.goals.contains { $0.id == todo.goalID && $0.doneTs == nil && $0.deleteTs == nil }
+                )
         }
     }
 
@@ -193,6 +203,7 @@ final class GoalsStore: ObservableObject {
     func startAddingGoal() {
         isAddingGoal = true
         addingTodoGoalID = nil
+        isAddingStandaloneTodo = false
         editingGoalID = nil
         editingTodoID = nil
         goalName = ""
@@ -203,6 +214,7 @@ final class GoalsStore: ObservableObject {
     func startEditingGoal(_ goal: GoalRecord) {
         isAddingGoal = false
         addingTodoGoalID = nil
+        isAddingStandaloneTodo = false
         editingGoalID = goal.id
         editingTodoID = nil
         goalName = goal.name
@@ -293,39 +305,59 @@ final class GoalsStore: ObservableObject {
 
     func startAddingTodo(goalID: Int64) {
         addingTodoGoalID = goalID
+        isAddingStandaloneTodo = false
         isAddingGoal = false
         editingGoalID = nil
         editingTodoID = nil
         todoName = ""
         todoRepeating = false
         todoHasDailyTarget = false
+        todoDailyTargetMode = .minimum
+        todoDailyTargetMinutes = 30
+        errorMessage = nil
+    }
+
+    func startAddingStandaloneTodo() {
+        addingTodoGoalID = nil
+        isAddingStandaloneTodo = true
+        isAddingGoal = false
+        editingGoalID = nil
+        editingTodoID = nil
+        todoName = ""
+        todoRepeating = false
+        todoHasDailyTarget = false
+        todoDailyTargetMode = .minimum
         todoDailyTargetMinutes = 30
         errorMessage = nil
     }
 
     func startEditingTodo(_ todo: GoalTodoRecord) {
         addingTodoGoalID = todo.goalID
+        isAddingStandaloneTodo = todo.goalID == nil
         isAddingGoal = false
         editingGoalID = nil
         editingTodoID = todo.id
         todoName = todo.name
         todoRepeating = todo.repeating
         todoHasDailyTarget = todo.dailyTargetSeconds != nil
+        todoDailyTargetMode = todo.dailyTargetMode
         todoDailyTargetMinutes = Double(todo.dailyTargetSeconds ?? 1_800) / 60
         errorMessage = nil
     }
 
     func cancelAddingTodo() {
         addingTodoGoalID = nil
+        isAddingStandaloneTodo = false
         editingTodoID = nil
         todoName = ""
         todoRepeating = false
         todoHasDailyTarget = false
+        todoDailyTargetMode = .minimum
         todoDailyTargetMinutes = 30
         errorMessage = nil
     }
 
-    func saveCurrentTodo(goalID: Int64) async {
+    func saveCurrentTodo(goalID: Int64?) async {
         let trimmedName = todoName.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
@@ -354,6 +386,7 @@ final class GoalsStore: ObservableObject {
             repeatTemplateID: existing?.repeatTemplateID,
             targetDate: existing?.targetDate,
             dailyTargetSeconds: dailyTargetSeconds,
+            dailyTargetMode: todoHasDailyTarget ? todoDailyTargetMode : .minimum,
             embedding: existing?.embedding,
             deleteTs: existing?.deleteTs
         )
@@ -367,7 +400,8 @@ final class GoalsStore: ObservableObject {
             repeating: todo.repeating,
             repeatTemplateID: todo.repeatTemplateID,
             targetDate: todo.targetDate,
-            dailyTargetSeconds: todo.dailyTargetSeconds
+            dailyTargetSeconds: todo.dailyTargetSeconds,
+            dailyTargetMode: todo.dailyTargetMode
         )
         let mutationID = UUID()
         let previousSnapshot = snapshot
@@ -478,6 +512,7 @@ final class GoalsStore: ObservableObject {
                     repeatTemplateID: todo.repeatTemplateID,
                     targetDate: todo.targetDate,
                     dailyTargetSeconds: todo.dailyTargetSeconds,
+                    dailyTargetMode: todo.dailyTargetMode,
                     embedding: todo.embedding,
                     deleteTs: todo.deleteTs
                 )
@@ -521,6 +556,10 @@ final class GoalsStore: ObservableObject {
         snapshot.todos.filter { $0.goalID == goalID && $0.deleteTs == nil }
     }
 
+    var standaloneTodos: [GoalTodoRecord] {
+        snapshot.todos.filter { $0.goalID == nil && $0.deleteTs == nil }
+    }
+
     func durationForGoal(id: Int64) -> Int {
         snapshot.goalRollups.first { $0.goalID == id }?.duration ?? 0
     }
@@ -547,7 +586,7 @@ final class GoalsStore: ObservableObject {
     }
 
     func completedTodoCount(
-        goalID: Int64,
+        goalID: Int64?,
         on day: Date
     ) -> Int {
         snapshot.dailyCompletedTodoCounts.first { rollup in
@@ -559,17 +598,24 @@ final class GoalsStore: ObservableObject {
         AppColors.analyticsTagColor(for: "goal-\(goal.id)-\(goal.name)")
     }
 
+    var standaloneTodoColor: Color {
+        AppColors.textSecondary
+    }
+
     func todoProgress(id: Int64) -> GoalTodoProgress {
         let duration = durationForTodo(id: id)
-        let target = snapshot.todos.first { $0.id == id }?.dailyTargetSeconds
+        let todo = snapshot.todos.first { $0.id == id }
+        let target = todo?.dailyTargetSeconds
+        let targetMode = todo?.dailyTargetMode ?? .minimum
 
         guard let target, target > 0 else {
-            return GoalTodoProgress(duration: duration, target: nil, ratio: 0, overflowRatio: 0)
+            return GoalTodoProgress(duration: duration, target: nil, targetMode: targetMode, ratio: 0, overflowRatio: 0)
         }
 
         return GoalTodoProgress(
             duration: duration,
             target: target,
+            targetMode: targetMode,
             ratio: min(Double(duration) / Double(target), 1),
             overflowRatio: max(Double(duration - target) / Double(target), 0)
         )
@@ -677,7 +723,7 @@ final class GoalsStore: ObservableObject {
             return snapshot.dailyCompletedTodoCounts
         }
 
-        guard let goalID = oldTodo?.goalID else {
+        guard let oldTodo else {
             return snapshot.dailyCompletedTodoCounts
         }
 
@@ -694,11 +740,11 @@ final class GoalsStore: ObservableObject {
                 return
             }
 
-            if let index = counts.firstIndex(where: { $0.goalID == goalID && calendar.isDate($0.day, inSameDayAs: day) }) {
+            if let index = counts.firstIndex(where: { $0.goalID == oldTodo.goalID && calendar.isDate($0.day, inSameDayAs: day) }) {
                 let nextCount = max(counts[index].completedCount + delta, 0)
                 counts[index] = DailyCompletedTodoCount(goalID: counts[index].goalID, day: counts[index].day, completedCount: nextCount)
             } else if delta > 0 {
-                counts.append(DailyCompletedTodoCount(goalID: goalID, day: day, completedCount: delta))
+                counts.append(DailyCompletedTodoCount(goalID: oldTodo.goalID, day: day, completedCount: delta))
             }
 
             counts = counts
@@ -707,7 +753,7 @@ final class GoalsStore: ObservableObject {
                     if lhs.day != rhs.day {
                         return lhs.day < rhs.day
                     }
-                    return lhs.goalID < rhs.goalID
+                    return (lhs.goalID ?? Int64.max) < (rhs.goalID ?? Int64.max)
                 }
         }
     }

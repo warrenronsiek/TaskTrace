@@ -47,7 +47,7 @@ struct GoalsView: View {
         }
         .sheet(
             isPresented: Binding(
-                get: { goalsStore.addingTodoGoalID != nil },
+                get: { goalsStore.addingTodoGoalID != nil || goalsStore.isAddingStandaloneTodo || goalsStore.editingTodoID != nil },
                 set: { isPresented in
                     if !isPresented {
                         goalsStore.cancelAddingTodo()
@@ -55,11 +55,9 @@ struct GoalsView: View {
                 }
             )
         ) {
-            if let goalID = goalsStore.addingTodoGoalID {
-                todoForm(goalID: goalID)
-                    .padding(24)
-                    .frame(width: 520)
-            }
+            todoForm(goalID: goalsStore.addingTodoGoalID)
+                .padding(24)
+                .frame(width: 520)
         }
         .task {
             await goalsStore.load()
@@ -86,6 +84,15 @@ struct GoalsView: View {
             }
             .controlSize(.large)
             .buttonStyle(.borderedProminent)
+            .disabled(goalsStore.isAddingGoal || goalsStore.editingGoalID != nil)
+
+            Button {
+                goalsStore.startAddingStandaloneTodo()
+            } label: {
+                Label("Add Todo", systemImage: "checklist")
+            }
+            .controlSize(.large)
+            .buttonStyle(.bordered)
             .disabled(goalsStore.isAddingGoal || goalsStore.editingGoalID != nil)
         }
     }
@@ -155,6 +162,12 @@ struct GoalsView: View {
                     }
                 }
             }
+
+            if !goalsStore.snapshot.goals.isEmpty {
+                Divider().padding(.horizontal, 16)
+            }
+
+            standaloneSection
         }
         .background(AppColors.cardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .backgroundExtensionEffect()
@@ -260,7 +273,7 @@ struct GoalsView: View {
                     }
 
                     if let target = todo.dailyTargetSeconds {
-                        Label(formatDuration(target), systemImage: "timer")
+                        Label(todoTargetLabel(todo.dailyTargetMode, target), systemImage: "timer")
                     }
                 }
                 .font(Styles.Fonts.footnote)
@@ -285,7 +298,44 @@ struct GoalsView: View {
         .background(AppColors.insetBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func todoForm(goalID: Int64) -> some View {
+    private var standaloneSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(goalsStore.standaloneTodoColor)
+                        .frame(width: 9, height: 9)
+
+                    Text("Standalone Todos")
+                        .font(Styles.Fonts.headline)
+                }
+
+                Spacer()
+            }
+
+            if goalsStore.standaloneTodos.isEmpty {
+                Text("No standalone todos yet.")
+                    .font(Styles.Fonts.subheadline)
+                    .foregroundStyle(AppColors.textSecondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(goalsStore.standaloneTodos) { todo in
+                        todoRow(todo)
+                    }
+                }
+            }
+
+            Button {
+                goalsStore.startAddingStandaloneTodo()
+            } label: {
+                Label("Add Todo", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(16)
+    }
+
+    private func todoForm(goalID: Int64?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             TextField("Todo name", text: $goalsStore.todoName)
                 .textFieldStyle(.plain)
@@ -293,11 +343,17 @@ struct GoalsView: View {
                 .padding(.vertical, 10)
                 .background(AppColors.insetBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            Toggle("Repeat daily while goal is open", isOn: $goalsStore.todoRepeating)
+            Toggle(goalID == nil ? "Repeat daily until deleted" : "Repeat daily while goal is open", isOn: $goalsStore.todoRepeating)
 
             Toggle("Daily time target", isOn: $goalsStore.todoHasDailyTarget)
 
             if goalsStore.todoHasDailyTarget {
+                Picker("Target mode", selection: $goalsStore.todoDailyTargetMode) {
+                    Text("At least").tag(GoalTodoTargetMode.minimum)
+                    Text("At most").tag(GoalTodoTargetMode.maximum)
+                }
+                .pickerStyle(.segmented)
+
                 HStack(spacing: 12) {
                     Slider(value: $goalsStore.todoDailyTargetMinutes, in: 5...480, step: 5)
                     Text("\(Int(goalsStore.todoDailyTargetMinutes)) min")
@@ -341,6 +397,15 @@ struct GoalsView: View {
 
     private func formatDuration(_ seconds: Int) -> String {
         formatGoalDuration(seconds)
+    }
+
+    private func todoTargetLabel(_ mode: GoalTodoTargetMode, _ seconds: Int) -> String {
+        switch mode {
+        case .minimum:
+            return "At least \(formatDuration(seconds))"
+        case .maximum:
+            return "At most \(formatDuration(seconds))"
+        }
     }
 }
 
@@ -459,7 +524,7 @@ private struct GoalsWeeklyChart: View {
                     VStack(spacing: 0) {
                         ForEach(completedBarSegments(on: pair.element).reversed()) { segment in
                             Rectangle()
-                                .fill(goalsStore.goalColor(segment.goal).opacity(0.58))
+                                .fill(segment.color.opacity(0.58))
                                 .frame(
                                     width: barWidth,
                                     height: CGFloat(segment.count) / CGFloat(maxCompletedCount) * height
@@ -560,10 +625,17 @@ private struct GoalsWeeklyChart: View {
     }
 
     private func completedBarSegments(on day: Date) -> [CompletedTodoBarSegment] {
-        goals.compactMap { goal in
+        let goalSegments = goals.compactMap { goal in
             let count = goalsStore.completedTodoCount(goalID: goal.id, on: day)
-            return count > 0 ? CompletedTodoBarSegment(goal: goal, count: count) : nil
+            return count > 0 ? CompletedTodoBarSegment(id: "goal-\(goal.id)", color: goalsStore.goalColor(goal), count: count) : nil
         }
+        let standaloneCount = goalsStore.completedTodoCount(goalID: nil, on: day)
+
+        return goalSegments + [
+            standaloneCount > 0
+                ? CompletedTodoBarSegment(id: "standalone", color: goalsStore.standaloneTodoColor, count: standaloneCount)
+                : nil
+        ].compactMap { $0 }
     }
 
     private func yAxis(
@@ -624,12 +696,9 @@ private struct GoalsWeeklyChart: View {
 }
 
 private struct CompletedTodoBarSegment: Identifiable {
-    let goal: GoalRecord
+    let id: String
+    let color: Color
     let count: Int
-
-    var id: Int64 {
-        goal.id
-    }
 }
 
 private struct TodoCompletionButton: View {
@@ -722,13 +791,19 @@ private struct TodoProgressBar: View {
                     let width = max(proxy.size.width, 1)
                     let fillWidth = width * progress.ratio
                     let tickerX = min(max(fillWidth, 3), width - 3)
+                    let fillColor = switch progress.targetMode {
+                    case .minimum:
+                        progress.duration >= target ? AppColors.success.opacity(0.72) : AppColors.accent.opacity(0.72)
+                    case .maximum:
+                        progress.duration <= target ? AppColors.success.opacity(0.72) : AppColors.danger.opacity(0.72)
+                    }
 
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(AppColors.chipBackground)
 
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(progress.duration >= target ? AppColors.success.opacity(0.72) : AppColors.accent.opacity(0.72))
+                            .fill(fillColor)
                             .frame(width: max(fillWidth, progress.duration > 0 ? 4 : 0))
 
                         Rectangle()
@@ -744,12 +819,12 @@ private struct TodoProgressBar: View {
 
                     if progress.overflowRatio > 0 {
                         Text("+\(formatGoalDuration(max(progress.duration - target, 0)))")
-                            .foregroundStyle(AppColors.success)
+                            .foregroundStyle(progress.targetMode == .maximum ? AppColors.danger : AppColors.success)
                     }
 
                     Spacer()
 
-                    Text(formatGoalDuration(target))
+                    Text(progress.targetMode == .maximum ? "limit \(formatGoalDuration(target))" : "target \(formatGoalDuration(target))")
                 }
                 .font(Styles.Fonts.caption2)
                 .foregroundStyle(AppColors.textSecondary)

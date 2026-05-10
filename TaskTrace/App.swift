@@ -344,7 +344,10 @@ struct TaskTraceApp: App {
             actorSystem: actorSystem,
             activityDatabaseActor: activityDatabaseActor
         )
-        let goalTodoEmbeddingActor = GoalTodoEmbeddingActor(actorSystem: actorSystem)
+        let goalTodoAssignmentActor = GoalTodoAssignmentActor(
+            actorSystem: actorSystem,
+            goalsDatabaseActor: goalsDatabaseActor
+        )
         let goalTodoActor = GoalTodoActor(
             goalsDatabaseActor: goalsDatabaseActor,
             actorSystem: actorSystem
@@ -624,7 +627,7 @@ struct TaskTraceApp: App {
         let bootstrapKnowledgeObsidianWriterActor = knowledgeObsidianWriterActor
         let bootstrapKnowledgeClaimEmbeddingActor = knowledgeClaimEmbeddingActor
         let bootstrapActivityUMAPActor = activityUMAPActor
-        let bootstrapGoalTodoEmbeddingActor = goalTodoEmbeddingActor
+        let bootstrapGoalTodoAssignmentActor = goalTodoAssignmentActor
         let bootstrapGoalTodoActor = goalTodoActor
         let bootstrapJobsActor = jobsActor
         let runCurrentDayOntologyCatchUp = { @MainActor @Sendable () async in
@@ -722,7 +725,7 @@ struct TaskTraceApp: App {
                     knowledgeClaimEmbeddingActor: bootstrapKnowledgeClaimEmbeddingActor
                 )
                 _ = await bootstrapActorSystem.register(bootstrapActivityUMAPActor)
-                _ = await bootstrapActorSystem.register(bootstrapGoalTodoEmbeddingActor)
+                _ = await bootstrapActorSystem.register(bootstrapGoalTodoAssignmentActor)
                 _ = await bootstrapActorSystem.register(bootstrapGoalTodoActor)
                 _ = await bootstrapActorSystem.register(bootstrapJobsActor)
                 await bootstrapJobsActor.start()

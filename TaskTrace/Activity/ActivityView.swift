@@ -17,12 +17,18 @@ private struct ActivityTagChoice: Identifiable {
 }
 
 private struct ActivityGoalTodoGroup: Identifiable {
-    let goal: GoalRecord
+    let goal: GoalRecord?
     let todos: [GoalTodoRecord]
 
-    var id: Int64 {
-        goal.id
+    var id: String {
+        goal.map { "goal-\($0.id)" } ?? "standalone"
     }
+}
+
+private struct ActivityGoalTodoChoice: Identifiable {
+    let id: String
+    let todoID: Int64?
+    let title: String
 }
 
 struct ActivityView: View {
@@ -61,7 +67,7 @@ struct ActivityView: View {
                                 tagName: tagName(for: activity.tagID),
                                 tagChoices: activityTagChoices,
                                 goalTodoGroups: activityGoalTodoGroups,
-                                currentGoalName: goalsStore.goalName(for: goalsStore.goalID(forTodoID: activity.goalTodoID)),
+                                currentGoalName: goalsStore.goalName(for: goalsStore.goalID(forTodoID: activity.goalTodoID)) ?? (activity.goalTodoID == nil ? nil : "Standalone"),
                                 currentTodoName: goalsStore.todoName(for: activity.goalTodoID),
                                 endTime: endTime(for: activity.id),
                                 duration: duration(for: activity.id),
@@ -152,7 +158,7 @@ struct ActivityView: View {
     }
 
     private var activityGoalTodoGroups: [ActivityGoalTodoGroup] {
-        goalsStore.openGoals.compactMap { goal in
+        let goalGroups: [ActivityGoalTodoGroup] = goalsStore.openGoals.compactMap { goal in
             let todos = goalsStore.openTodos.filter { $0.goalID == goal.id }
 
             guard !todos.isEmpty else {
@@ -161,6 +167,11 @@ struct ActivityView: View {
 
             return ActivityGoalTodoGroup(goal: goal, todos: todos)
         }
+        let standaloneTodos = goalsStore.openTodos.filter { $0.goalID == nil }
+
+        return goalGroups + [
+            standaloneTodos.isEmpty ? nil : ActivityGoalTodoGroup(goal: nil, todos: standaloneTodos)
+        ].compactMap { $0 }
     }
 }
 
@@ -262,45 +273,15 @@ private struct ActivityCard: View {
                 .frame(width: 172, alignment: .leading)
                 .help(tagName ?? "No Tag")
 
-                Menu {
-                    Button("No Goal") {
-                        Task {
-                            await onSelectGoalTodo(nil)
-                        }
+                Picker("Goal", selection: goalTodoBinding) {
+                    ForEach(goalTodoChoices) { choice in
+                        Text(choice.title)
+                            .tag(choice.todoID)
                     }
-
-                    if !goalTodoGroups.isEmpty {
-                        Divider()
-                    }
-
-                    ForEach(goalTodoGroups) { group in
-                        Menu(group.goal.name) {
-                            ForEach(group.todos) { todo in
-                                Button(todo.name) {
-                                    Task {
-                                        await onSelectGoalTodo(todo.id)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if let currentTodoName,
-                       !goalTodoGroups.flatMap(\.todos).contains(where: { $0.id == activity.goalTodoID }) {
-                        Divider()
-                        Text("Archived: \(currentTodoName)")
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: activity.goalTodoID == nil ? "target" : "target")
-                            .font(Styles.Fonts.subheadlineSemibold)
-                        Text(currentTodoName ?? "No Goal")
-                            .lineLimit(1)
-                    }
-                    .frame(width: 172, alignment: .leading)
                 }
-                .menuStyle(.button)
-                .buttonStyle(.bordered)
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 172, alignment: .leading)
                 .help(currentGoalName.map { "\($0): \(currentTodoName ?? "No Todo")" } ?? "No Goal")
 
                 VStack(alignment: .trailing, spacing: 2) {
@@ -421,6 +402,45 @@ private struct ActivityCard: View {
                 }
             }
         )
+    }
+
+    private var goalTodoBinding: Binding<Int64?> {
+        Binding(
+            get: { activity.goalTodoID },
+            set: { newValue in
+                Task {
+                    await onSelectGoalTodo(newValue)
+                }
+            }
+        )
+    }
+
+    private var goalTodoChoices: [ActivityGoalTodoChoice] {
+        let choices = [
+            ActivityGoalTodoChoice(id: "none", todoID: nil, title: "No Goal")
+        ] + goalTodoGroups.flatMap { group in
+            group.todos.map { todo in
+                ActivityGoalTodoChoice(
+                    id: "todo-\(todo.id)",
+                    todoID: todo.id,
+                    title: "\(group.goal?.name ?? "Standalone") / \(todo.name)"
+                )
+            }
+        }
+
+        guard let currentTodoID = activity.goalTodoID,
+              let currentTodoName,
+              !choices.contains(where: { $0.todoID == currentTodoID }) else {
+            return choices
+        }
+
+        return choices + [
+            ActivityGoalTodoChoice(
+                id: "archived-\(currentTodoID)",
+                todoID: currentTodoID,
+                title: "Archived / \(currentTodoName)"
+            )
+        ]
     }
 
     private var availablePanels: [Panel] {

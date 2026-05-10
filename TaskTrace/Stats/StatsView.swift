@@ -271,6 +271,7 @@ struct StatsViewDisplayCopy: Equatable {
 
     private static let telemetryLabels: [String: String] = [
         "activity-summary": "Activity summaries",
+        "activity-goal-todo-assignment": "Goal assignment",
         "activity-summary-embedding": "Activity search indexing",
         "activity-embedding": "Activity search indexing",
         "activity-reranking": "Activity search ranking",
