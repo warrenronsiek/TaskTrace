@@ -2,6 +2,7 @@ ChronoKeep
 Build
 default.profraw
 *.profraw
+*.DS_Store
 node_modules/
 .release-version.env
 .oss-template-values.local.json
