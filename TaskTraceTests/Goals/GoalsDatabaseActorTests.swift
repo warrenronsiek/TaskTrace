@@ -237,6 +237,41 @@ struct GoalsDatabaseActorTests {
         }
     }
 
+    @Test("snapshot hides dated todos from earlier days")
+    func snapshotHidesDatedTodosFromEarlierDays() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
+            let pastDay = selectedDay.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: pastDay, dailyTargetSeconds: nil))
+
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(
+                visibleStart: pastDay,
+                visibleEnd: selectedDay,
+                selectedDay: selectedDay
+            )
+
+            #expect(snapshot.todos.isEmpty)
+        }
+    }
+
+    @Test("snapshot decodes todo target date as selected local day")
+    func snapshotDecodesTodoTargetDateAsSelectedLocalDay() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: selectedDay, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Today", createTs: selectedDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: selectedDay, dailyTargetSeconds: nil))
+
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(
+                visibleStart: selectedDay.addingTimeInterval(-86_400),
+                visibleEnd: selectedDay,
+                selectedDay: selectedDay
+            )
+
+            #expect(snapshot.todos.first?.targetDate?.formatted(date: .abbreviated, time: .omitted) == selectedDay.formatted(date: .abbreviated, time: .omitted))
+        }
+    }
+
     @Test("rewound snapshot carries forward undated open todo")
     func rewoundSnapshotCarriesForwardUndatedOpenTodo() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
@@ -506,6 +541,20 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Future", createTs: futureDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: futureDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: selectedDay)
+
+            #expect(candidates.isEmpty)
+        }
+    }
+
+    @Test("activity day candidates exclude past dated todos")
+    func activityDayCandidatesExcludePastDatedTodos() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
+            let pastDay = activityDay.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: pastDay, dailyTargetSeconds: nil))
+
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
 
             #expect(candidates.isEmpty)
         }

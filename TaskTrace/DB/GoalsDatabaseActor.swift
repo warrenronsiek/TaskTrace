@@ -55,7 +55,7 @@ actor GoalsDatabaseActor {
                     selectedDaySQL
                 ]
             )
-            let todos = try GoalTodoRecord.fetchAll(
+            let todos = try Row.fetchAll(
                 db,
                 sql: """
                     SELECT
@@ -93,6 +93,7 @@ actor GoalsDatabaseActor {
                           )
                       )
                       AND DATE(goal_todos.create_ts) <= DATE(?)
+                      AND (goal_todos.target_date IS NULL OR DATE(goal_todos.target_date) = DATE(?))
                       AND (goal_todos.status = ? OR goal_todos.status_ts IS NULL OR DATE(goal_todos.status_ts) >= DATE(?))
                       AND goal_todos.delete_ts IS NULL
                     ORDER BY goal_todos.target_date IS NULL ASC, goal_todos.target_date DESC, goal_todos.create_ts DESC, goal_todos.id DESC
@@ -106,10 +107,49 @@ actor GoalsDatabaseActor {
                     selectedDaySQL,
                     selectedDaySQL,
                     selectedDaySQL,
+                    selectedDaySQL,
                     GoalTodoStatus.open.rawValue,
                     selectedDaySQL
                 ]
-            )
+            ).map { row in
+                let doneTs: Date? = if let value = row["done_ts"] as String? {
+                    try TaskTraceDatabase.date(fromSQLTimestamp: value)
+                } else {
+                    nil
+                }
+                let statusTs: Date? = if let value = row["status_ts"] as String? {
+                    try TaskTraceDatabase.date(fromSQLTimestamp: value)
+                } else {
+                    nil
+                }
+                let targetDate: Date? = if let value = row["target_date"] as String? {
+                    try TaskTraceDatabase.date(fromSQLDate: value)
+                } else {
+                    nil
+                }
+                let deleteTs: Date? = if let value = row["delete_ts"] as String? {
+                    try TaskTraceDatabase.date(fromSQLTimestamp: value)
+                } else {
+                    nil
+                }
+
+                return GoalTodoRecord(
+                    id: row["id"],
+                    goalID: row["goal_id"] as Int64?,
+                    name: row["name"],
+                    createTs: try TaskTraceDatabase.date(fromSQLTimestamp: row["create_ts"]),
+                    doneTs: doneTs,
+                    status: GoalTodoStatus(rawValue: row["status"] as String) ?? .open,
+                    statusTs: statusTs,
+                    repeating: row["repeating"],
+                    repeatTemplateID: row["repeat_template_id"],
+                    targetDate: targetDate,
+                    dailyTargetSeconds: row["daily_target_seconds"],
+                    dailyTargetMode: GoalTodoTargetMode(rawValue: row["daily_target_mode"] as String? ?? "") ?? .minimum,
+                    embedding: row["embedding"],
+                    deleteTs: deleteTs
+                )
+            }
             let goalRollups = try GoalRollup.fetchAll(
                 db,
                 sql: """
@@ -633,6 +673,7 @@ actor GoalsDatabaseActor {
                           )
                       )
                       AND DATE(goal_todos.create_ts) <= DATE(?)
+                      AND (goal_todos.target_date IS NULL OR DATE(goal_todos.target_date) = DATE(?))
                       AND goal_todos.delete_ts IS NULL
                       AND (
                           goal_todos.status = ?
@@ -642,6 +683,7 @@ actor GoalsDatabaseActor {
                     ORDER BY goal_todos.goal_id IS NULL ASC, goals.create_ts DESC, goal_todos.create_ts DESC
                     """,
                 arguments: [
+                    activityDaySQL,
                     activityDaySQL,
                     activityDaySQL,
                     activityDaySQL,
