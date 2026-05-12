@@ -51,8 +51,31 @@ struct AnalyticsView: View {
 
     private var tagFilterSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Tags")
-                .font(Styles.Fonts.headline)
+            HStack(spacing: 12) {
+                Text("Tags")
+                    .font(Styles.Fonts.headline)
+
+                Spacer()
+
+                Picker(
+                    "Tag range",
+                    selection: Binding(
+                        get: { analyticsStore.tagListScope },
+                        set: { scope in
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                                analyticsStore.setTagListScope(scope)
+                            }
+                        }
+                    )
+                ) {
+                    ForEach(AnalyticsStore.TagListScope.allCases) { scope in
+                        Text(scope.rawValue).tag(scope)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
 
             if tagFlowWidth > 0 {
                 TagTileFlowLayout(horizontalSpacing: 10, verticalSpacing: 10) {
@@ -67,7 +90,7 @@ struct AnalyticsView: View {
                         }
                     }
 
-                    ForEach(analyticsStore.availableTags, id: \.self) { tag in
+                    ForEach(analyticsStore.visibleTagFilters, id: \.self) { tag in
                         selectorButton(
                             title: tag,
                             icon: "tag",

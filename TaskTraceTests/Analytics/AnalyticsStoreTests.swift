@@ -174,6 +174,164 @@ struct AnalyticsStoreTests {
             #expect(analyticsStore.barChartTags == ["Work"])
         }
     }
+
+    @Test("tag list scope defaults to last 14 days")
+    func tagListScopeDefaultsToLast14Days() async throws {
+        try await withAnalyticsStore { _, analyticsStore in
+            #expect(analyticsStore.tagListScope == .recent14Days)
+        }
+    }
+
+    @Test("recent tag filters exclude tags only present before last 14 days")
+    func recentTagFiltersExcludeTagsOnlyPresentBeforeLast14Days() async throws {
+        try await withAnalyticsStore { database, analyticsStore in
+            try await database.save(.tag(.record(TagInput(
+                id: 1,
+                name: "Old",
+                description: nil,
+                createDate: testAnalyticsDate(month: 2, day: 1, hour: 0, minute: 0),
+                deleteDate: nil,
+                jsonProperties: nil
+            ))))
+            try await database.save(.tag(.record(TagInput(
+                id: 2,
+                name: "Work",
+                description: nil,
+                createDate: testAnalyticsDate(day: 1, hour: 0, minute: 0),
+                deleteDate: nil,
+                jsonProperties: nil
+            ))))
+            try await seedAnalyticsDay(
+                database: database,
+                day: 27,
+                month: 2,
+                applications: [
+                    (100, 9, 0, "com.apple.dt.Xcode", 1),
+                    (101, 10, 0, "PAUSED", 0)
+                ]
+            )
+            try await seedAnalyticsDay(
+                database: database,
+                day: 13,
+                applications: [
+                    (102, 9, 0, "com.apple.dt.Xcode", 2),
+                    (103, 10, 0, "PAUSED", 0)
+                ]
+            )
+
+            await analyticsStore.load()
+
+            #expect(analyticsStore.visibleTagFilters == ["Work"])
+        }
+    }
+
+    @Test("recent tag filters include untagged recent time")
+    func recentTagFiltersIncludeUntaggedRecentTime() async throws {
+        try await withAnalyticsStore { database, analyticsStore in
+            try await seedAnalyticsDay(
+                database: database,
+                day: 13,
+                applications: [
+                    (100, 9, 0, "com.apple.Safari", nil),
+                    (101, 10, 0, "PAUSED", 0)
+                ]
+            )
+
+            await analyticsStore.load()
+
+            #expect(analyticsStore.visibleTagFilters == [AnalyticsStore.untaggedName])
+        }
+    }
+
+    @Test("all time tag filters include older tags")
+    func allTimeTagFiltersIncludeOlderTags() async throws {
+        try await withAnalyticsStore { database, analyticsStore in
+            try await database.save(.tag(.record(TagInput(
+                id: 1,
+                name: "Old",
+                description: nil,
+                createDate: testAnalyticsDate(month: 2, day: 1, hour: 0, minute: 0),
+                deleteDate: nil,
+                jsonProperties: nil
+            ))))
+            try await database.save(.tag(.record(TagInput(
+                id: 2,
+                name: "Work",
+                description: nil,
+                createDate: testAnalyticsDate(day: 1, hour: 0, minute: 0),
+                deleteDate: nil,
+                jsonProperties: nil
+            ))))
+            try await seedAnalyticsDay(
+                database: database,
+                day: 27,
+                month: 2,
+                applications: [
+                    (100, 9, 0, "com.apple.dt.Xcode", 1),
+                    (101, 10, 0, "PAUSED", 0)
+                ]
+            )
+            try await seedAnalyticsDay(
+                database: database,
+                day: 13,
+                applications: [
+                    (102, 9, 0, "com.apple.dt.Xcode", 2),
+                    (103, 10, 0, "PAUSED", 0)
+                ]
+            )
+
+            await analyticsStore.load()
+            analyticsStore.setTagListScope(.allTime)
+
+            #expect(analyticsStore.visibleTagFilters == ["Old", "Work"])
+        }
+    }
+
+    @Test("switching to recent tag filters prunes hidden selected tags")
+    func switchingToRecentTagFiltersPrunesHiddenSelectedTags() async throws {
+        try await withAnalyticsStore { database, analyticsStore in
+            try await database.save(.tag(.record(TagInput(
+                id: 1,
+                name: "Old",
+                description: nil,
+                createDate: testAnalyticsDate(month: 2, day: 1, hour: 0, minute: 0),
+                deleteDate: nil,
+                jsonProperties: nil
+            ))))
+            try await database.save(.tag(.record(TagInput(
+                id: 2,
+                name: "Work",
+                description: nil,
+                createDate: testAnalyticsDate(day: 1, hour: 0, minute: 0),
+                deleteDate: nil,
+                jsonProperties: nil
+            ))))
+            try await seedAnalyticsDay(
+                database: database,
+                day: 27,
+                month: 2,
+                applications: [
+                    (100, 9, 0, "com.apple.dt.Xcode", 1),
+                    (101, 10, 0, "PAUSED", 0)
+                ]
+            )
+            try await seedAnalyticsDay(
+                database: database,
+                day: 13,
+                applications: [
+                    (102, 9, 0, "com.apple.dt.Xcode", 2),
+                    (103, 10, 0, "PAUSED", 0)
+                ]
+            )
+
+            await analyticsStore.load()
+            analyticsStore.setTagListScope(.allTime)
+            analyticsStore.toggleTagFilter("Old")
+            analyticsStore.setTagListScope(.recent14Days)
+
+            #expect(analyticsStore.selectedTags.isEmpty)
+        }
+    }
 }
 
 @MainActor
@@ -201,12 +359,13 @@ private func withAnalyticsStore(
 private func seedAnalyticsDay(
     database: TaskTraceDatabase,
     day: Int,
+    month: Int = 3,
     applications: [(Int64, Int, Int, String, Int64?)]
 ) async throws {
     try await applications.asyncForEach { item in
         try await database.saveActivityRecord(ActivityInput(
             id: item.0,
-            startTime: testAnalyticsDate(day: day, hour: item.1, minute: item.2),
+            startTime: testAnalyticsDate(month: month, day: day, hour: item.1, minute: item.2),
             application: item.3,
             keystrokes: "",
             microphone: nil,
@@ -227,8 +386,12 @@ private final class AnalyticsStoreTestClock: @unchecked Sendable {
 }
 
 private func testAnalyticsDate(day: Int, hour: Int, minute: Int) -> Date {
+    testAnalyticsDate(month: 3, day: day, hour: hour, minute: minute)
+}
+
+private func testAnalyticsDate(month: Int, day: Int, hour: Int, minute: Int) -> Date {
     Calendar(identifier: .gregorian).date(
-        from: DateComponents(year: 2026, month: 3, day: day, hour: hour, minute: minute)
+        from: DateComponents(year: 2026, month: month, day: day, hour: hour, minute: minute)
     ) ?? .distantPast
 }
 

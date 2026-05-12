@@ -42,9 +42,17 @@ final class AnalyticsStore: ObservableObject {
         }
     }
 
+    enum TagListScope: String, CaseIterable, Identifiable {
+        case recent14Days = "Last 14 Days"
+        case allTime = "All Time"
+
+        var id: Self { self }
+    }
+
     @Published private(set) var timeline: [TimelineEntry]
     @Published private(set) var availableTags: [String]
     @Published private(set) var selectedTags: Set<String>
+    @Published private(set) var tagListScope: TagListScope
     @Published private(set) var isLoading: Bool
     @Published private(set) var errorMessage: String?
 
@@ -61,6 +69,7 @@ final class AnalyticsStore: ObservableObject {
         self.timeline = []
         self.availableTags = []
         self.selectedTags = []
+        self.tagListScope = .recent14Days
         self.isLoading = false
         self.errorMessage = nil
         self.now = now
@@ -97,9 +106,11 @@ final class AnalyticsStore: ObservableObject {
         self.availableTags = availableTags
         self.isLoading = false
         self.errorMessage = nil
-        self.selectedTags = Set(availableTags).intersection(selectedTags)
+        self.selectedTags = selectedTags
+        self.tagListScope = .recent14Days
         self.now = Date.init
         self.calendar = Calendar(identifier: .gregorian)
+        self.selectedTags = self.selectedTags.intersection(Set(visibleTagFilters))
     }
 
     func load() async {
@@ -138,7 +149,7 @@ final class AnalyticsStore: ObservableObject {
             }
             self.errorMessage = nil
 
-            self.selectedTags = Set(self.selectedTags).intersection(Set(availableTags))
+            self.selectedTags = Set(self.selectedTags).intersection(Set(visibleTagFilters))
         } catch {
             timeline = []
             availableTags = []
@@ -158,6 +169,11 @@ final class AnalyticsStore: ObservableObject {
         }
 
         selectedTags = updatedTags
+    }
+
+    func setTagListScope(_ scope: TagListScope) {
+        tagListScope = scope
+        selectedTags = selectedTags.intersection(Set(visibleTagFilters))
     }
 
     func clearTagFilters() {
@@ -249,6 +265,25 @@ final class AnalyticsStore: ObservableObject {
         }
 
         return availableTags.filter { selectedTags.contains($0) }
+    }
+
+    var visibleTagFilters: [String] {
+        switch tagListScope {
+        case .allTime:
+            return availableTags
+        case .recent14Days:
+            guard let startDate = calendar.date(byAdding: .day, value: -13, to: calendar.startOfDay(for: now())) else {
+                return []
+            }
+
+            let recentTags = Set(
+                timeline
+                    .filter { $0.date >= startDate }
+                    .flatMap { $0.tags.keys }
+            )
+
+            return availableTags.filter { recentTags.contains($0) }
+        }
     }
 
     private static let sqlDateParser = Date.ParseStrategy(
