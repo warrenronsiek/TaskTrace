@@ -556,7 +556,7 @@ actor GoalsDatabaseActor {
             guard let activity = try Row.fetchOne(
                 db,
                 sql: """
-                    SELECT goal_todo_assignment_source, DATE(start_time) AS activity_day
+                    SELECT goal_todo_assignment_source, start_time, DATE(start_time) AS activity_day
                     FROM activities
                     WHERE id = ?
                     """,
@@ -571,6 +571,7 @@ actor GoalsDatabaseActor {
             }
 
             let activityDay: String = activity["activity_day"]
+            let activityStart: String = activity["start_time"]
             let todoIsAssignable = try Bool.fetchOne(
                 db,
                 sql: """
@@ -582,27 +583,28 @@ actor GoalsDatabaseActor {
                           AND (
                               goal_todos.goal_id IS NULL
                               OR (
-                                  DATE(goals.create_ts) <= DATE(?)
-                                  AND (goals.done_ts IS NULL OR DATE(goals.done_ts) >= DATE(?))
+                                  goals.create_ts <= ?
+                                  AND (goals.done_ts IS NULL OR goals.done_ts > ?)
                                   AND goals.delete_ts IS NULL
                               )
                           )
-                          AND DATE(goal_todos.create_ts) <= DATE(?)
+                          AND goal_todos.create_ts <= ?
+                          AND (goal_todos.target_date IS NULL OR DATE(goal_todos.target_date) = DATE(?))
                           AND (
                               goal_todos.status = ?
-                              OR goal_todos.status_ts IS NULL
-                              OR DATE(goal_todos.status_ts) >= DATE(?)
+                              OR COALESCE(goal_todos.status_ts, goal_todos.done_ts) > ?
                           )
                           AND goal_todos.delete_ts IS NULL
                     )
                     """,
                 arguments: [
                     todoID,
-                    activityDay,
-                    activityDay,
+                    activityStart,
+                    activityStart,
+                    activityStart,
                     activityDay,
                     GoalTodoStatus.open.rawValue,
-                    activityDay
+                    activityStart
                 ]
             ) ?? false
 
@@ -648,8 +650,9 @@ actor GoalsDatabaseActor {
         }
     }
 
-    func loadOpenTodoCandidates(forActivityDay activityDay: Date) async throws -> [GoalTodoCandidate] {
-        let activityDaySQL = calendar.startOfDay(for: activityDay).formatted(TaskTraceDatabase.sqlDateStyle)
+    func loadOpenTodoCandidates(forActivityStart activityStart: Date) async throws -> [GoalTodoCandidate] {
+        let activityDaySQL = calendar.startOfDay(for: activityStart).formatted(TaskTraceDatabase.sqlDateStyle)
+        let activityStartSQL = activityStart.formatted(TaskTraceDatabase.sqlTimestampStyle)
 
         return try database.read { db in
             try Self.loadCandidates(
@@ -667,28 +670,27 @@ actor GoalsDatabaseActor {
                     WHERE (
                           goal_todos.goal_id IS NULL
                           OR (
-                              DATE(goals.create_ts) <= DATE(?)
-                              AND (goals.done_ts IS NULL OR DATE(goals.done_ts) >= DATE(?))
+                              goals.create_ts <= ?
+                              AND (goals.done_ts IS NULL OR goals.done_ts > ?)
                               AND goals.delete_ts IS NULL
                           )
                       )
-                      AND DATE(goal_todos.create_ts) <= DATE(?)
+                      AND goal_todos.create_ts <= ?
                       AND (goal_todos.target_date IS NULL OR DATE(goal_todos.target_date) = DATE(?))
                       AND goal_todos.delete_ts IS NULL
                       AND (
                           goal_todos.status = ?
-                          OR goal_todos.status_ts IS NULL
-                          OR DATE(goal_todos.status_ts) >= DATE(?)
+                          OR COALESCE(goal_todos.status_ts, goal_todos.done_ts) > ?
                       )
-                    ORDER BY goal_todos.goal_id IS NULL ASC, goals.create_ts DESC, goal_todos.create_ts DESC
+                    ORDER BY goal_todos.goal_id IS NULL ASC, goals.create_ts DESC, goals.id DESC, goal_todos.create_ts DESC, goal_todos.id ASC
                     """,
                 arguments: [
-                    activityDaySQL,
-                    activityDaySQL,
-                    activityDaySQL,
+                    activityStartSQL,
+                    activityStartSQL,
+                    activityStartSQL,
                     activityDaySQL,
                     GoalTodoStatus.open.rawValue,
-                    activityDaySQL
+                    activityStartSQL
                 ],
                 db: db
             )

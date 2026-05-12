@@ -532,6 +532,37 @@ struct GoalsDatabaseActorTests {
         }
     }
 
+    @Test("automatic assignment excludes todo completed before activity start")
+    func automaticAssignmentExcludesTodoCompletedBeforeActivityStart() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let activityStart = now.addingTimeInterval(1_200)
+            let activityDatabaseActor = ActivityDatabaseActor(database: database)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: now, status: .done, statusTs: now.addingTimeInterval(600), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await activityDatabaseActor.saveActivityRecord(
+                ActivityInput(
+                    id: 3,
+                    startTime: activityStart,
+                    application: "com.example.App",
+                    keystrokes: nil,
+                    microphone: nil,
+                    summary: "Working after completion",
+                    tagID: nil,
+                    jsonProperties: nil,
+                    overviewID: nil
+                )
+            )
+            let didAssign = try await goalsDatabaseActor.assignActivityAutomatically(
+                activityID: 3,
+                todoID: 2,
+                now: activityStart
+            )
+
+            #expect(didAssign == false)
+        }
+    }
+
     @Test("activity day candidates exclude future todos")
     func activityDayCandidatesExcludeFutureTodos() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
@@ -540,7 +571,7 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: selectedDay, doneTs: nil))
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Future", createTs: futureDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: futureDay, dailyTargetSeconds: nil))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: selectedDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: selectedDay)
 
             #expect(candidates.isEmpty)
         }
@@ -554,7 +585,7 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: pastDay, dailyTargetSeconds: nil))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
             #expect(candidates.isEmpty)
         }
@@ -566,9 +597,25 @@ struct GoalsDatabaseActorTests {
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: activityDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
             #expect(candidates.first?.goal == nil)
+        }
+    }
+
+    @Test("activity start candidates use deterministic ordering for equal timestamps")
+    func activityStartCandidatesUseDeterministicOrderingForEqualTimestamps() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let activityStart = Date(timeIntervalSince1970: 1_765_000_000)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Older id", description: nil, createTs: activityStart, doneTs: nil))
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 2, name: "Newer id", description: nil, createTs: activityStart, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 11, goalID: 1, name: "B", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 10, goalID: 1, name: "A", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 21, goalID: 2, name: "D", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 20, goalID: 2, name: "C", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
+
+            #expect(candidates.map(\.todo.id) == [20, 21, 10, 11])
         }
     }
 
@@ -580,7 +627,20 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: activityDay, doneTs: nil))
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done later", createTs: activityDay, status: .done, statusTs: completedDay, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
+
+            #expect(candidates.first?.todo.id == 2)
+        }
+    }
+
+    @Test("activity start candidates include todo completed after activity start")
+    func activityStartCandidatesIncludeTodoCompletedAfterActivityStart() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let activityStart = now.addingTimeInterval(600)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done later", createTs: now, status: .done, statusTs: now.addingTimeInterval(1_200), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
 
             #expect(candidates.first?.todo.id == 2)
         }
@@ -594,7 +654,33 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: completedDay, doneTs: nil))
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: completedDay, status: .done, statusTs: completedDay, repeating: false, repeatTemplateID: nil, targetDate: completedDay, dailyTargetSeconds: nil))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
+
+            #expect(candidates.isEmpty)
+        }
+    }
+
+    @Test("activity start candidates exclude todo completed before activity start")
+    func activityStartCandidatesExcludeTodoCompletedBeforeActivityStart() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let activityStart = now.addingTimeInterval(1_200)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: now, status: .done, statusTs: now.addingTimeInterval(600), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
+
+            #expect(candidates.isEmpty)
+        }
+    }
+
+    @Test("activity start candidates exclude failed todo before activity start")
+    func activityStartCandidatesExcludeFailedTodoBeforeActivityStart() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let activityStart = now.addingTimeInterval(1_200)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Failed", createTs: now, status: .failed, statusTs: now.addingTimeInterval(600), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
 
             #expect(candidates.isEmpty)
         }
@@ -608,7 +694,7 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Deleted", createTs: activityDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteTodo(id: 2, now: activityDay.addingTimeInterval(86_400))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
             #expect(candidates.isEmpty)
         }
@@ -622,7 +708,7 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: activityDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteGoal(id: 1, now: activityDay.addingTimeInterval(86_400))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
             #expect(candidates.isEmpty)
         }
@@ -636,7 +722,7 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Done Goal", description: nil, createTs: completedDay, doneTs: completedDay))
             try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: completedDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: completedDay, dailyTargetSeconds: nil))
 
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityDay: activityDay)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
             #expect(candidates.isEmpty)
         }

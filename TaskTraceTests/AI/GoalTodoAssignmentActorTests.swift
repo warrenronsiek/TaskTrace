@@ -6,6 +6,11 @@ import Testing
 
 @MainActor
 struct GoalTodoAssignmentActorTests {
+    @Test("goal todo assignment instructions prefer nil for weak matches")
+    func goalTodoAssignmentInstructionsPreferNilForWeakMatches() {
+        #expect(GoalTodoAssignmentActor.instructions.contains("Return nil when no todo is a direct semantic match"))
+    }
+
     @Test("goal todo assignment prompt uses zero indexed todo candidates")
     func goalTodoAssignmentPromptUsesZeroIndexedTodoCandidates() async throws {
         try await withFixture(response: "0") { fixture in
@@ -36,7 +41,7 @@ struct GoalTodoAssignmentActorTests {
 
     @Test("goal todo assignment maps model index to todo id")
     func goalTodoAssignmentMapsModelIndexToTodoID() async throws {
-        try await withFixture(response: "1") { fixture in
+        try await withFixture(response: "0") { fixture in
             try await fixture.seedOpenTodo(id: 42, name: "Study", goalName: "Learning")
             try await fixture.seedOpenTodo(id: 84, name: "Leetcode", goalName: "Algorithms")
             await fixture.actorSystem.broadcast(from: nil, message: ActivitySummarized(activity: fixture.activity()))
@@ -108,7 +113,7 @@ struct GoalTodoAssignmentActorTests {
 
     @Test("goal todo assignment does not overwrite manual assignment")
     func goalTodoAssignmentDoesNotOverwriteManualAssignment() async throws {
-        try await withFixture(response: "0", registersGoalActor: true) { fixture in
+        try await withFixture(response: "1", registersGoalActor: true) { fixture in
             try await fixture.seedOpenTodo(id: 42, name: "Leetcode", goalName: "Algorithms")
             try await fixture.seedOpenTodo(id: 84, name: "Study", goalName: "Learning")
             try await fixture.activityDatabaseActor.saveActivityRecord(fixture.activityInput())

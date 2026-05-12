@@ -12,9 +12,10 @@ import OSLog
 actor GoalTodoAssignmentActor: Receiver {
     nonisolated static let instructions =
         """
-        You assign one summarized computer activity to one available todo.
+        You match one summarized computer activity to one available todo only when the activity clearly advances that todo.
         Activities can only be assigned to todos, not directly to goals.
         Use the goal context only to understand what each todo means.
+        Return nil when no todo is a direct semantic match, when the match is weak, or when the activity only relates to the broader goal.
         Return exactly one value: either the zero-based todo index or nil.
         Do not return markdown, explanation, labels, JSON, or any other text.
         """
@@ -59,7 +60,7 @@ actor GoalTodoAssignmentActor: Receiver {
     private func process(_ activity: ActivityActor.Activity) async {
         do {
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(
-                forActivityDay: activity.startTime
+                forActivityStart: activity.startTime
             )
 
             guard !candidates.isEmpty else {
@@ -108,7 +109,7 @@ actor GoalTodoAssignmentActor: Receiver {
         }
 
         logger.log(
-            "goal-todo-assignment-actor completed activityID=\(request.activityID, privacy: .public) todoID=\(todoID.map(String.init) ?? "<nil>", privacy: .public)"
+            "goal-todo-assignment-actor completed activityID=\(request.activityID, privacy: .public) decision=\(decision.map(String.init) ?? "<nil>", privacy: .public) todoID=\(todoID.map(String.init) ?? "<nil>", privacy: .public)"
         )
         await actorSystem.broadcast(
             from: nil,
