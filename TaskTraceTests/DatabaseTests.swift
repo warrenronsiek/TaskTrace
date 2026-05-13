@@ -1644,45 +1644,24 @@ struct TaskTraceDatabaseTests {
         }
     }
 
-    @Test("saved agent actions are readable from the agent actions table")
-    func savedAgentActionsAreReadable() async throws {
+    @Test("database initialization does not keep the legacy agent actions table")
+    func initializationDoesNotKeepTheLegacyAgentActionsTable() async throws {
         try await withDatabase { database, _ in
-            try await database.save(.agentAction(.record(AgentActionInput(
-                id: 101,
-                instructions: "Handle summarized activities.",
-                eventType: .activitySummarized,
-                conversationID: "conversation-101"
-            ))))
-
-            let agentActions: [AgentActionRecord] = switch try await database.get(.agentAction(.all)) {
-            case let .agentActions(value):
-                value
-            default:
-                []
+            let exists = try database.read { db in
+                try Bool.fetchOne(
+                    db,
+                    sql: """
+                        SELECT EXISTS(
+                            SELECT 1
+                            FROM sqlite_schema
+                            WHERE type = 'table'
+                              AND name = 'agent_actions'
+                        )
+                        """
+                ) ?? false
             }
 
-            #expect(agentActions.map(\.conversationID) == ["conversation-101"])
-        }
-    }
-
-    @Test("saved agent actions preserve their event type")
-    func savedAgentActionsPreserveTheirEventType() async throws {
-        try await withDatabase { database, _ in
-            try await database.save(.agentAction(.record(AgentActionInput(
-                id: 101,
-                instructions: "Handle summarized activities.",
-                eventType: .activitySummarized,
-                conversationID: "conversation-101"
-            ))))
-
-            let agentActions: [AgentActionRecord] = switch try await database.get(.agentAction(.all)) {
-            case let .agentActions(value):
-                value
-            default:
-                []
-            }
-
-            #expect(agentActions.map(\.eventType) == [.activitySummarized])
+            #expect(exists == false)
         }
     }
 

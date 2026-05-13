@@ -9,7 +9,29 @@ struct GoalsDatabaseActorTests {
     func migrationSetsTheGoalSchemaVersion() async throws {
         try await withGoalsDatabase { database, _ in
             let version = try database.getVersion()
-            #expect(version == 48)
+            #expect(version == 49)
+        }
+    }
+
+    @Test("migration removes repeat template id from goal todos")
+    func migrationRemovesRepeatTemplateIDFromGoalTodos() async throws {
+        try await withLegacyRepeatTemplateDatabase { database in
+            let hasRepeatTemplateColumn = try database.read { db in
+                try db.columns(in: "goal_todos").contains { $0.name == "repeat_template_id" }
+            }
+
+            #expect(hasRepeatTemplateColumn == false)
+        }
+    }
+
+    @Test("migration converts legacy repeat instances into repeating todos")
+    func migrationConvertsLegacyRepeatInstancesIntoRepeatingTodos() async throws {
+        try await withLegacyRepeatTemplateDatabase { database in
+            let isRepeating = try database.read { db in
+                try Bool.fetchOne(db, sql: "SELECT repeating FROM goal_todos WHERE id = 2") ?? false
+            }
+
+            #expect(isRepeating == true)
         }
     }
 
@@ -17,7 +39,7 @@ struct GoalsDatabaseActorTests {
     func snapshotIncludesStandaloneTodos() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: now.addingTimeInterval(-86_400),
@@ -33,7 +55,7 @@ struct GoalsDatabaseActorTests {
     func completedStandaloneTodoCountsWithoutAGoalID() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .done, statusTs: now, repeating: false, repeatTemplateID: nil, targetDate: now, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .done, statusTs: now, repeating: false, targetDate: now, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: now.addingTimeInterval(-86_400),
@@ -41,7 +63,23 @@ struct GoalsDatabaseActorTests {
                 selectedDay: now
             )
 
-            #expect(snapshot.dailyCompletedTodoCounts.first?.goalID == nil)
+            #expect(snapshot.dailyTodoOutcomeCounts.first?.goalID == nil)
+        }
+    }
+
+    @Test("failed standalone todo counts without a goal id")
+    func failedStandaloneTodoCountsWithoutAGoalID() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .failed, statusTs: now, repeating: false, targetDate: now, dailyTargetSeconds: nil))
+
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(
+                visibleStart: now.addingTimeInterval(-86_400),
+                visibleEnd: now.addingTimeInterval(86_400),
+                selectedDay: now
+            )
+
+            #expect(snapshot.dailyTodoOutcomeCounts.first?.failedCount == 1)
         }
     }
 
@@ -50,7 +88,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: now, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: now.addingTimeInterval(1_800), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await goalsDatabaseActor.assignActivity(activityID: 3, todoID: 2, source: .manual, score: nil, now: now)
@@ -70,7 +108,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: now, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: now.addingTimeInterval(1_800), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await goalsDatabaseActor.assignActivity(activityID: 3, todoID: 2, source: .manual, score: nil, now: now)
@@ -85,25 +123,27 @@ struct GoalsDatabaseActorTests {
         }
     }
 
-    @Test("daily maintenance creates standalone repeated todo instance")
-    func dailyMaintenanceCreatesStandaloneRepeatedTodoInstance() async throws {
+    @Test("daily maintenance creates today todo from yesterday repeating todo")
+    func dailyMaintenanceCreatesTodayTodoFromYesterdayRepeatingTodo() async throws {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: true, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            let yesterday = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: yesterday, status: .open, statusTs: nil, repeating: true, targetDate: yesterday, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.runDailyMaintenance(now: now)
 
             let instanceCount = try database.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE repeat_template_id = 2") ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE repeating = 1 AND DATE(target_date) = DATE(?)", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)]) ?? 0
             }
 
             #expect(instanceCount == 1)
         }
     }
 
-    @Test("daily maintenance creates one repeated todo instance for today")
-    func dailyMaintenanceCreatesOneRepeatedTodoInstanceForToday() async throws {
+    @Test("daily maintenance is idempotent for today's repeated todo")
+    func dailyMaintenanceIsIdempotentForTodaysRepeatedTodo() async throws {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let yesterday = now.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(
                 GoalInput(
                     id: 1,
@@ -118,12 +158,11 @@ struct GoalsDatabaseActorTests {
                     id: 2,
                     goalID: 1,
                     name: "Write",
-                    createTs: now,
+                    createTs: yesterday,
                     status: .open,
                     statusTs: nil,
                     repeating: true,
-                    repeatTemplateID: nil,
-                    targetDate: nil,
+                    targetDate: yesterday,
                     dailyTargetSeconds: 1_800
                 )
             )
@@ -136,8 +175,12 @@ struct GoalsDatabaseActorTests {
                     sql: """
                         SELECT COUNT(*)
                         FROM goal_todos
-                        WHERE repeat_template_id = 2
-                        """
+                        WHERE repeating = 1
+                          AND goal_id = 1
+                          AND name = 'Write'
+                          AND DATE(target_date) = DATE(?)
+                        """,
+                    arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)]
                 ) ?? 0
             }
 
@@ -145,19 +188,85 @@ struct GoalsDatabaseActorTests {
         }
     }
 
-    @Test("daily maintenance copies maximum target mode to repeated todo")
-    func dailyMaintenanceCopiesMaximumTargetModeToRepeatedTodo() async throws {
+    @Test("daily maintenance copies maximum target mode to today's repeated todo")
+    func dailyMaintenanceCopiesMaximumTargetModeToTodaysRepeatedTodo() async throws {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let yesterday = now.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Daily limit", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid social media", createTs: now, status: .open, statusTs: nil, repeating: true, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid social media", createTs: yesterday, status: .open, statusTs: nil, repeating: true, targetDate: yesterday, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
             try await goalsDatabaseActor.runDailyMaintenance(now: now)
 
             let targetMode = try database.read { db in
-                try String.fetchOne(db, sql: "SELECT daily_target_mode FROM goal_todos WHERE repeat_template_id = 2")
+                try String.fetchOne(db, sql: "SELECT daily_target_mode FROM goal_todos WHERE DATE(target_date) = DATE(?)", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)])
             }
 
             #expect(targetMode == GoalTodoTargetMode.maximum.rawValue)
+        }
+    }
+
+    @Test("daily maintenance repeats a completed yesterday todo")
+    func dailyMaintenanceRepeatsACompletedYesterdayTodo() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let yesterday = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Repeat done", createTs: yesterday, status: .done, statusTs: yesterday, repeating: true, targetDate: yesterday, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let status = try database.read { db in
+                try String.fetchOne(db, sql: "SELECT status FROM goal_todos WHERE DATE(target_date) = DATE(?) AND id <> 2", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)])
+            }
+
+            #expect(status == GoalTodoStatus.open.rawValue)
+        }
+    }
+
+    @Test("daily maintenance repeats a failed yesterday todo")
+    func dailyMaintenanceRepeatsAFailedYesterdayTodo() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let yesterday = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Repeat failed", createTs: yesterday, status: .failed, statusTs: yesterday, repeating: true, targetDate: yesterday, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let status = try database.read { db in
+                try String.fetchOne(db, sql: "SELECT status FROM goal_todos WHERE DATE(target_date) = DATE(?) AND id <> 2", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)])
+            }
+
+            #expect(status == GoalTodoStatus.open.rawValue)
+        }
+    }
+
+    @Test("daily maintenance skips deleted yesterday repeating todo")
+    func dailyMaintenanceSkipsDeletedYesterdayRepeatingTodo() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let yesterday = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Deleted repeat", createTs: yesterday, status: .open, statusTs: nil, repeating: true, targetDate: yesterday, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.softDeleteTodo(id: 2, now: yesterday)
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let instanceCount = try database.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE DATE(target_date) = DATE(?)", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)]) ?? 0
+            }
+
+            #expect(instanceCount == 0)
+        }
+    }
+
+    @Test("daily maintenance does not catch up missed repeating days")
+    func dailyMaintenanceDoesNotCatchUpMissedRepeatingDays() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let twoDaysAgo = now.addingTimeInterval(-172_800)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Old repeat", createTs: twoDaysAgo, status: .open, statusTs: nil, repeating: true, targetDate: twoDaysAgo, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let instanceCount = try database.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE DATE(target_date) = DATE(?)", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)]) ?? 0
+            }
+
+            #expect(instanceCount == 0)
         }
     }
 
@@ -167,7 +276,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: now, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: now.addingTimeInterval(1_800), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await goalsDatabaseActor.assignActivity(activityID: 3, todoID: 2, source: .manual, score: nil, now: now)
@@ -188,7 +297,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let targetDate = now.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .done, statusTs: now, repeating: false, repeatTemplateID: nil, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .done, statusTs: now, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: targetDate.addingTimeInterval(-86_400),
@@ -196,7 +305,7 @@ struct GoalsDatabaseActorTests {
                 selectedDay: now
             )
 
-            #expect(snapshot.dailyCompletedTodoCounts.contains { Calendar(identifier: .gregorian).isDate($0.day, inSameDayAs: now) })
+            #expect(snapshot.dailyTodoOutcomeCounts.contains { Calendar(identifier: .gregorian).isDate($0.day, inSameDayAs: now) })
         }
     }
 
@@ -206,7 +315,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let deleteTs = now.addingTimeInterval(3_600)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteTodo(id: 2, now: deleteTs)
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
@@ -225,7 +334,7 @@ struct GoalsDatabaseActorTests {
             let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
             let futureDay = selectedDay.addingTimeInterval(86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: selectedDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Future", createTs: futureDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: futureDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Future", createTs: futureDay, status: .open, statusTs: nil, repeating: false, targetDate: futureDay, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: selectedDay.addingTimeInterval(-86_400),
@@ -243,7 +352,7 @@ struct GoalsDatabaseActorTests {
             let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
             let pastDay = selectedDay.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: pastDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, targetDate: pastDay, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: pastDay,
@@ -260,7 +369,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: selectedDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Today", createTs: selectedDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: selectedDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Today", createTs: selectedDay, status: .open, statusTs: nil, repeating: false, targetDate: selectedDay, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: selectedDay.addingTimeInterval(-86_400),
@@ -278,7 +387,7 @@ struct GoalsDatabaseActorTests {
             let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
             let pastDay = selectedDay.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Carry", createTs: pastDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Carry", createTs: pastDay, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: pastDay,
@@ -296,7 +405,7 @@ struct GoalsDatabaseActorTests {
             let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
             let pastDay = selectedDay.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: pastDay, status: .done, statusTs: pastDay, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: pastDay, status: .done, statusTs: pastDay, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
                 visibleStart: pastDay,
@@ -314,7 +423,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let targetDate = now.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
             try await goalsDatabaseActor.runDailyMaintenance(now: now)
 
             let status = try database.read { db in
@@ -332,7 +441,7 @@ struct GoalsDatabaseActorTests {
             let targetDate = now.addingTimeInterval(-86_400)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: targetDate, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: targetDate.addingTimeInterval(1_800), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try database.write { db in
@@ -355,7 +464,7 @@ struct GoalsDatabaseActorTests {
             let targetDate = now.addingTimeInterval(-86_400)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: targetDate, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: targetDate, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: targetDate.addingTimeInterval(1_200), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try database.write { db in
@@ -378,7 +487,7 @@ struct GoalsDatabaseActorTests {
             let targetDate = now.addingTimeInterval(-86_400)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: targetDate, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: targetDate, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: targetDate.addingTimeInterval(1_800), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try database.write { db in
@@ -401,7 +510,7 @@ struct GoalsDatabaseActorTests {
             let targetDate = now.addingTimeInterval(-86_400)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: targetDate, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Avoid", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800, dailyTargetMode: .maximum))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 3, startTime: targetDate, application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Start", tagID: nil, jsonProperties: nil, overviewID: nil))
             try await activityDatabaseActor.saveActivityRecord(ActivityInput(id: 4, startTime: targetDate.addingTimeInterval(1_801), application: "com.example.App", keystrokes: nil, microphone: nil, summary: "Next", tagID: nil, jsonProperties: nil, overviewID: nil))
             try database.write { db in
@@ -423,8 +532,8 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Manual", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 3, goalID: 1, name: "Auto", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Manual", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 3, goalID: 1, name: "Auto", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(
                 ActivityInput(
                     id: 4,
@@ -468,7 +577,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Auto", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Auto", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(
                 ActivityInput(
                     id: 3,
@@ -504,7 +613,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(
                 ActivityInput(
                     id: 3,
@@ -539,7 +648,7 @@ struct GoalsDatabaseActorTests {
             let activityStart = now.addingTimeInterval(1_200)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: now, status: .done, statusTs: now.addingTimeInterval(600), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: now, status: .done, statusTs: now.addingTimeInterval(600), repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(
                 ActivityInput(
                     id: 3,
@@ -569,7 +678,7 @@ struct GoalsDatabaseActorTests {
             let selectedDay = Date(timeIntervalSince1970: 1_765_000_000)
             let futureDay = selectedDay.addingTimeInterval(86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: selectedDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Future", createTs: futureDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: futureDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Future", createTs: futureDay, status: .open, statusTs: nil, repeating: false, targetDate: futureDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: selectedDay)
 
@@ -583,7 +692,7 @@ struct GoalsDatabaseActorTests {
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             let pastDay = activityDay.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: pastDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: pastDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Past", createTs: pastDay, status: .open, statusTs: nil, repeating: false, targetDate: pastDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
@@ -595,7 +704,7 @@ struct GoalsDatabaseActorTests {
     func activityDayCandidatesIncludeStandaloneTodos() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: activityDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: activityDay, status: .open, statusTs: nil, repeating: false, targetDate: activityDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
@@ -609,10 +718,10 @@ struct GoalsDatabaseActorTests {
             let activityStart = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Older id", description: nil, createTs: activityStart, doneTs: nil))
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 2, name: "Newer id", description: nil, createTs: activityStart, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 11, goalID: 1, name: "B", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 10, goalID: 1, name: "A", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 21, goalID: 2, name: "D", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 20, goalID: 2, name: "C", createTs: activityStart, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 11, goalID: 1, name: "B", createTs: activityStart, status: .open, statusTs: nil, repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 10, goalID: 1, name: "A", createTs: activityStart, status: .open, statusTs: nil, repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 21, goalID: 2, name: "D", createTs: activityStart, status: .open, statusTs: nil, repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 20, goalID: 2, name: "C", createTs: activityStart, status: .open, statusTs: nil, repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
 
             #expect(candidates.map(\.todo.id) == [20, 21, 10, 11])
@@ -625,7 +734,7 @@ struct GoalsDatabaseActorTests {
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             let completedDay = activityDay.addingTimeInterval(86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: activityDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done later", createTs: activityDay, status: .done, statusTs: completedDay, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done later", createTs: activityDay, status: .done, statusTs: completedDay, repeating: false, targetDate: activityDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
@@ -639,7 +748,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityStart = now.addingTimeInterval(600)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done later", createTs: now, status: .done, statusTs: now.addingTimeInterval(1_200), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done later", createTs: now, status: .done, statusTs: now.addingTimeInterval(1_200), repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
 
             #expect(candidates.first?.todo.id == 2)
@@ -652,7 +761,7 @@ struct GoalsDatabaseActorTests {
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             let completedDay = activityDay.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: completedDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: completedDay, status: .done, statusTs: completedDay, repeating: false, repeatTemplateID: nil, targetDate: completedDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: completedDay, status: .done, statusTs: completedDay, repeating: false, targetDate: completedDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
@@ -666,7 +775,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityStart = now.addingTimeInterval(1_200)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: now, status: .done, statusTs: now.addingTimeInterval(600), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Done", createTs: now, status: .done, statusTs: now.addingTimeInterval(600), repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
 
             #expect(candidates.isEmpty)
@@ -679,7 +788,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityStart = now.addingTimeInterval(1_200)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Failed", createTs: now, status: .failed, statusTs: now.addingTimeInterval(600), repeating: false, repeatTemplateID: nil, targetDate: activityStart, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Failed", createTs: now, status: .failed, statusTs: now.addingTimeInterval(600), repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
 
             #expect(candidates.isEmpty)
@@ -691,7 +800,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: activityDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Deleted", createTs: activityDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Deleted", createTs: activityDay, status: .open, statusTs: nil, repeating: false, targetDate: activityDay, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteTodo(id: 2, now: activityDay.addingTimeInterval(86_400))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
@@ -705,7 +814,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Deleted Goal", description: nil, createTs: activityDay, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: activityDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: activityDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: activityDay, status: .open, statusTs: nil, repeating: false, targetDate: activityDay, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteGoal(id: 1, now: activityDay.addingTimeInterval(86_400))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
@@ -720,7 +829,7 @@ struct GoalsDatabaseActorTests {
             let activityDay = Date(timeIntervalSince1970: 1_765_000_000)
             let completedDay = activityDay.addingTimeInterval(-86_400)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Done Goal", description: nil, createTs: completedDay, doneTs: completedDay))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: completedDay, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: completedDay, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: completedDay, status: .open, statusTs: nil, repeating: false, targetDate: completedDay, dailyTargetSeconds: nil))
 
             let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityDay)
 
@@ -734,7 +843,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Target", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: now, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Target", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: now, dailyTargetSeconds: 1_800))
             try await activityDatabaseActor.saveActivityRecord(
                 ActivityInput(
                     id: 3,
@@ -785,7 +894,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteGoal(id: 1, now: now)
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
@@ -794,7 +903,7 @@ struct GoalsDatabaseActorTests {
                 selectedDay: now
             )
 
-            #expect(snapshot == GoalsSnapshot(goals: [], todos: [], goalRollups: [], todoRollups: [], dailyGoalDurations: [], dailyCompletedTodoCounts: []))
+            #expect(snapshot == GoalsSnapshot(goals: [], todos: [], goalRollups: [], todoRollups: [], dailyGoalDurations: [], dailyTodoOutcomeCounts: []))
         }
     }
 
@@ -803,7 +912,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await goalsDatabaseActor.softDeleteGoal(id: 1, now: now.addingTimeInterval(3_600))
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
@@ -822,7 +931,7 @@ struct GoalsDatabaseActorTests {
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let activityDatabaseActor = ActivityDatabaseActor(database: database)
             try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, repeatTemplateID: nil, targetDate: nil, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: nil, dailyTargetSeconds: nil))
             try await activityDatabaseActor.saveActivityRecord(
                 ActivityInput(
                     id: 3,
@@ -866,4 +975,60 @@ private func withGoalsDatabase(
     let goalsDatabaseActor = GoalsDatabaseActor(database: database)
 
     try await block(database, goalsDatabaseActor)
+}
+
+@MainActor
+private func withLegacyRepeatTemplateDatabase(
+    _ block: (TaskTraceDatabase) async throws -> Void
+) async throws {
+    let rootURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let databaseURL = rootURL.appendingPathComponent("TaskTrace.sqlite")
+
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    try TaskTraceDatabaseBootstrap.migrate(databaseURL: databaseURL)
+
+    do {
+        let queue = try DatabaseQueue(
+            path: databaseURL.path,
+            configuration: TaskTraceDatabaseBootstrap.makeConfiguration(
+                label: "TaskTraceLegacyRepeatTemplateTests",
+                extensionSet: .migrator
+            )
+        )
+        try await queue.write { db in
+            try db.execute(sql: "ALTER TABLE goal_todos ADD COLUMN repeat_template_id INTEGER")
+            try db.execute(
+                sql: """
+                    INSERT INTO goal_todos (
+                        id,
+                        goal_id,
+                        name,
+                        create_ts,
+                        done_ts,
+                        status,
+                        status_ts,
+                        repeating,
+                        repeat_template_id,
+                        target_date,
+                        daily_target_seconds,
+                        daily_target_mode,
+                        embedding,
+                        delete_ts
+                    )
+                    VALUES
+                        (1, NULL, 'Legacy template', '2026-05-11 08:00:00', NULL, 'open', NULL, 1, NULL, NULL, NULL, 'minimum', NULL, NULL),
+                        (2, NULL, 'Legacy template', '2026-05-12 08:00:00', NULL, 'open', NULL, 0, 1, '2026-05-12', NULL, 'minimum', NULL, NULL)
+                    """
+            )
+            try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v49_remove_goal_todo_repeat_templates'")
+            try db.execute(sql: "DELETE FROM versions")
+            try db.execute(sql: "INSERT INTO versions (version) VALUES (48)")
+        }
+    }
+
+    try TaskTraceDatabaseBootstrap.migrate(databaseURL: databaseURL)
+    let database = try TaskTraceDatabase(databaseURL: databaseURL)
+
+    try await block(database)
 }

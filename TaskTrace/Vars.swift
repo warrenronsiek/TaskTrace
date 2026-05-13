@@ -37,8 +37,12 @@ enum Vars {
     nonisolated static let mcpOverviewResourceURI = "tasktrace://overviews/active-day"
     nonisolated static let mcpHighLevelActivityResourceURI = "tasktrace://activities/high-level"
     nonisolated static let mcpDetailedActivityResourceURI = "tasktrace://activities/detailed"
+    nonisolated static let mcpTodayTodosResourceURI = "tasktrace://todos/today"
     nonisolated static let mcpSearchToolName = "tasktrace_search"
     nonisolated static let mcpGraphRAGToolName = "tasktrace_graph_search"
+    nonisolated static let mcpAddTodoToolName = "tasktrace_add_todo"
+    nonisolated static let mcpAddGoalToolName = "tasktrace_add_goal"
+    nonisolated static let mcpPushMessageToolName = "tasktrace_push_message"
     nonisolated static let mcpServerName = "tasktrace-mcp"
     nonisolated static let mcpServerTitle = "TaskTrace MCP Server"
     nonisolated static let browserPluginHostName = "com.tasktrace.browser_plugin"
@@ -49,13 +53,6 @@ enum Vars {
     nonisolated static let mcpActivityIdentifierPrefix = "act_"
     nonisolated static let mcpScreenshotMimeType = "image/webp"
     nonisolated static let mcpActivityScreenshotResourceTemplateURI = "tasktrace://activity/{activityId}/screenshot/{screenshotId}"
-    nonisolated static let openClawChannelSocketPath = {
-        let suffix = bundleIdentifier
-            .replacingOccurrences(of: "com.tasktrace.", with: "")
-            .replacingOccurrences(of: ".", with: "-")
-            .lowercased()
-        return "/tmp/tasktrace-\(suffix)-openclaw.sock"
-    }()
     nonisolated static let mcpBrokerSocketPath = {
         let suffix = bundleIdentifier
             .replacingOccurrences(of: "com.tasktrace.", with: "")

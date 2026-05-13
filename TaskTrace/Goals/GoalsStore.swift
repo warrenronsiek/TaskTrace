@@ -63,7 +63,7 @@ final class GoalsStore: ObservableObject {
             goalRollups: [],
             todoRollups: [],
             dailyGoalDurations: [],
-            dailyCompletedTodoCounts: []
+            dailyTodoOutcomeCounts: []
         )
         self.isAddingGoal = false
         self.addingTodoGoalID = nil
@@ -284,7 +284,7 @@ final class GoalsStore: ObservableObject {
             goalRollups: snapshot.goalRollups,
             todoRollups: snapshot.todoRollups,
             dailyGoalDurations: snapshot.dailyGoalDurations,
-            dailyCompletedTodoCounts: snapshot.dailyCompletedTodoCounts
+            dailyTodoOutcomeCounts: snapshot.dailyTodoOutcomeCounts
         )
         cancelGoalEditor()
         commit(
@@ -374,6 +374,7 @@ final class GoalsStore: ObservableObject {
         }
         let existing = snapshot.todos.first { $0.id == identifier }
         let dailyTargetSeconds = todoHasDailyTarget ? Int(todoDailyTargetMinutes * 60) : nil
+        let targetDate = todoRepeating ? (existing?.targetDate ?? selectedDay) : existing?.targetDate
         let todo = GoalTodoRecord(
             id: identifier,
             goalID: goalID,
@@ -383,8 +384,7 @@ final class GoalsStore: ObservableObject {
             status: existing?.status ?? .open,
             statusTs: existing?.statusTs,
             repeating: todoRepeating,
-            repeatTemplateID: existing?.repeatTemplateID,
-            targetDate: existing?.targetDate,
+            targetDate: targetDate,
             dailyTargetSeconds: dailyTargetSeconds,
             dailyTargetMode: todoHasDailyTarget ? todoDailyTargetMode : .minimum,
             embedding: existing?.embedding,
@@ -398,7 +398,6 @@ final class GoalsStore: ObservableObject {
             status: todo.status,
             statusTs: todo.statusTs,
             repeating: todo.repeating,
-            repeatTemplateID: todo.repeatTemplateID,
             targetDate: todo.targetDate,
             dailyTargetSeconds: todo.dailyTargetSeconds,
             dailyTargetMode: todo.dailyTargetMode
@@ -424,7 +423,7 @@ final class GoalsStore: ObservableObject {
             goalRollups: snapshot.goalRollups,
             todoRollups: snapshot.todoRollups,
             dailyGoalDurations: snapshot.dailyGoalDurations,
-            dailyCompletedTodoCounts: snapshot.dailyCompletedTodoCounts
+            dailyTodoOutcomeCounts: snapshot.dailyTodoOutcomeCounts
         )
         cancelAddingTodo()
         commit(
@@ -470,7 +469,7 @@ final class GoalsStore: ObservableObject {
             goalRollups: snapshot.goalRollups,
             todoRollups: snapshot.todoRollups,
             dailyGoalDurations: snapshot.dailyGoalDurations,
-            dailyCompletedTodoCounts: snapshot.dailyCompletedTodoCounts
+            dailyTodoOutcomeCounts: snapshot.dailyTodoOutcomeCounts
         )
         commit(
             mutationID: mutationID,
@@ -487,7 +486,7 @@ final class GoalsStore: ObservableObject {
         let previousSnapshot = snapshot
         let timestamp = statusTimestampForSelectedDay()
         let existingTodo = snapshot.todos.first { $0.id == id }
-        let updatedCompletedCounts = optimisticCompletedTodoCounts(
+        let updatedOutcomeCounts = optimisticTodoOutcomeCounts(
             oldTodo: existingTodo,
             newStatus: status,
             statusTs: timestamp
@@ -509,7 +508,6 @@ final class GoalsStore: ObservableObject {
                     status: status,
                     statusTs: timestamp,
                     repeating: todo.repeating,
-                    repeatTemplateID: todo.repeatTemplateID,
                     targetDate: todo.targetDate,
                     dailyTargetSeconds: todo.dailyTargetSeconds,
                     dailyTargetMode: todo.dailyTargetMode,
@@ -520,7 +518,7 @@ final class GoalsStore: ObservableObject {
             goalRollups: snapshot.goalRollups,
             todoRollups: snapshot.todoRollups,
             dailyGoalDurations: snapshot.dailyGoalDurations,
-            dailyCompletedTodoCounts: updatedCompletedCounts
+            dailyTodoOutcomeCounts: updatedOutcomeCounts
         )
         commit(
             mutationID: mutationID,
@@ -578,10 +576,18 @@ final class GoalsStore: ObservableObject {
     }
 
     func completedTodoCount(on day: Date) -> Int {
-        snapshot.dailyCompletedTodoCounts.filter { rollup in
+        snapshot.dailyTodoOutcomeCounts.filter { rollup in
             calendar.isDate(rollup.day, inSameDayAs: day)
         }.reduce(0) { total, rollup in
             total + rollup.completedCount
+        }
+    }
+
+    func failedTodoCount(on day: Date) -> Int {
+        snapshot.dailyTodoOutcomeCounts.filter { rollup in
+            calendar.isDate(rollup.day, inSameDayAs: day)
+        }.reduce(0) { total, rollup in
+            total + rollup.failedCount
         }
     }
 
@@ -589,9 +595,18 @@ final class GoalsStore: ObservableObject {
         goalID: Int64?,
         on day: Date
     ) -> Int {
-        snapshot.dailyCompletedTodoCounts.first { rollup in
+        snapshot.dailyTodoOutcomeCounts.first { rollup in
             rollup.goalID == goalID && calendar.isDate(rollup.day, inSameDayAs: day)
         }?.completedCount ?? 0
+    }
+
+    func failedTodoCount(
+        goalID: Int64?,
+        on day: Date
+    ) -> Int {
+        snapshot.dailyTodoOutcomeCounts.first { rollup in
+            rollup.goalID == goalID && calendar.isDate(rollup.day, inSameDayAs: day)
+        }?.failedCount ?? 0
     }
 
     func goalColor(_ goal: GoalRecord) -> Color {
@@ -665,7 +680,7 @@ final class GoalsStore: ObservableObject {
                 !snapshot.todos.contains { $0.id == rollup.todoID && $0.goalID == id }
             },
             dailyGoalDurations: snapshot.dailyGoalDurations.filter { $0.goalID != id },
-            dailyCompletedTodoCounts: snapshot.dailyCompletedTodoCounts
+            dailyTodoOutcomeCounts: snapshot.dailyTodoOutcomeCounts
         )
         commit(
             mutationID: mutationID,
@@ -684,7 +699,7 @@ final class GoalsStore: ObservableObject {
             goalRollups: snapshot.goalRollups,
             todoRollups: snapshot.todoRollups.filter { $0.todoID != id },
             dailyGoalDurations: snapshot.dailyGoalDurations,
-            dailyCompletedTodoCounts: snapshot.dailyCompletedTodoCounts
+            dailyTodoOutcomeCounts: snapshot.dailyTodoOutcomeCounts
         )
         commit(
             mutationID: mutationID,
@@ -711,44 +726,65 @@ final class GoalsStore: ObservableObject {
         }
     }
 
-    private func optimisticCompletedTodoCounts(
+    private func optimisticTodoOutcomeCounts(
         oldTodo: GoalTodoRecord?,
         newStatus: GoalTodoStatus,
         statusTs: Date
-    ) -> [DailyCompletedTodoCount] {
-        let oldDay = oldTodo.flatMap { completionDay(for: $0, status: $0.status, statusTs: $0.statusTs) }
-        let newDay = oldTodo.flatMap { completionDay(for: $0, status: newStatus, statusTs: statusTs) }
+    ) -> [DailyTodoOutcomeCount] {
+        let oldOutcome = oldTodo.flatMap { outcomeDay(for: $0, status: $0.status, statusTs: $0.statusTs) }
+        let newOutcome = oldTodo.flatMap { outcomeDay(for: $0, status: newStatus, statusTs: statusTs) }
+        let outcomesAreEqual = switch (oldOutcome, newOutcome) {
+        case (.none, .none):
+            true
+        case let (.some(lhs), .some(rhs)):
+            lhs.status == rhs.status && calendar.isDate(lhs.day, inSameDayAs: rhs.day)
+        default:
+            false
+        }
 
-        guard oldDay != newDay else {
-            return snapshot.dailyCompletedTodoCounts
+        guard !outcomesAreEqual else {
+            return snapshot.dailyTodoOutcomeCounts
         }
 
         guard let oldTodo else {
-            return snapshot.dailyCompletedTodoCounts
+            return snapshot.dailyTodoOutcomeCounts
         }
 
         let updates = [
-            oldDay.map { (calendar.startOfDay(for: $0), -1) },
-            newDay.map { (calendar.startOfDay(for: $0), 1) }
+            oldOutcome.map { (calendar.startOfDay(for: $0.day), $0.status, -1) },
+            newOutcome.map { (calendar.startOfDay(for: $0.day), $0.status, 1) }
         ]
         .compactMap { $0 }
 
-        return updates.reduce(into: snapshot.dailyCompletedTodoCounts) { counts, update in
-            let (day, delta) = update
+        return updates.reduce(into: snapshot.dailyTodoOutcomeCounts) { counts, update in
+            let (day, status, delta) = update
 
             guard visibleTimelineDays.contains(where: { calendar.isDate($0, inSameDayAs: day) }) else {
                 return
             }
 
             if let index = counts.firstIndex(where: { $0.goalID == oldTodo.goalID && calendar.isDate($0.day, inSameDayAs: day) }) {
-                let nextCount = max(counts[index].completedCount + delta, 0)
-                counts[index] = DailyCompletedTodoCount(goalID: counts[index].goalID, day: counts[index].day, completedCount: nextCount)
+                let completedDelta = status == .done ? delta : 0
+                let failedDelta = status == .failed ? delta : 0
+                counts[index] = DailyTodoOutcomeCount(
+                    goalID: counts[index].goalID,
+                    day: counts[index].day,
+                    completedCount: max(counts[index].completedCount + completedDelta, 0),
+                    failedCount: max(counts[index].failedCount + failedDelta, 0)
+                )
             } else if delta > 0 {
-                counts.append(DailyCompletedTodoCount(goalID: oldTodo.goalID, day: day, completedCount: delta))
+                counts.append(
+                    DailyTodoOutcomeCount(
+                        goalID: oldTodo.goalID,
+                        day: day,
+                        completedCount: status == .done ? delta : 0,
+                        failedCount: status == .failed ? delta : 0
+                    )
+                )
             }
 
             counts = counts
-                .filter { $0.completedCount > 0 }
+                .filter { $0.completedCount > 0 || $0.failedCount > 0 }
                 .sorted { lhs, rhs in
                     if lhs.day != rhs.day {
                         return lhs.day < rhs.day
@@ -758,16 +794,16 @@ final class GoalsStore: ObservableObject {
         }
     }
 
-    private func completionDay(
+    private func outcomeDay(
         for todo: GoalTodoRecord,
         status: GoalTodoStatus,
         statusTs: Date?
-    ) -> Date? {
-        guard status == .done else {
+    ) -> (status: GoalTodoStatus, day: Date)? {
+        guard status == .done || status == .failed else {
             return nil
         }
 
-        return todo.doneTs ?? statusTs
+        return (status, todo.doneTs ?? statusTs ?? now())
     }
 
     private func statusTimestampForSelectedDay() -> Date {

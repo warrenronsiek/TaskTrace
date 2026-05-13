@@ -248,9 +248,6 @@ struct TaskTraceApp: App {
     let tagsStore: TagsStore?
     let analyticsStore: AnalyticsStore?
     let goalsStore: GoalsStore?
-    let agentActionActor: AgentActionActor?
-    let agentChannelActor: AgentChannelActor?
-    let agentActionsStore: AgentActionsStore?
     let jobsActor: JobsActor?
     let captureMonitor: TaskTraceCaptureMonitor?
     let overviewMCPServerController: OverviewMCPServerController?
@@ -290,9 +287,6 @@ struct TaskTraceApp: App {
             self.tagsStore = nil
             self.analyticsStore = nil
             self.goalsStore = nil
-            self.agentActionActor = nil
-            self.agentChannelActor = nil
-            self.agentActionsStore = nil
             self.jobsActor = nil
             self.captureMonitor = nil
             self.overviewMCPServerController = nil
@@ -325,7 +319,6 @@ struct TaskTraceApp: App {
         let searchDatabaseActor = SearchDatabaseActor(database: database)
         let analyticsDatabaseActor = AnalyticsDatabaseActor(database: database)
         let calendarDatabaseActor = CalendarDatabaseActor(database: database)
-        let agentActionsDatabaseActor = AgentActionsDatabaseActor(database: database)
         let jobsDatabaseActor = JobsDatabaseActor(database: database)
         let appUpdater = AppUpdater()
         let settingsStore = SettingsStore(
@@ -394,16 +387,13 @@ struct TaskTraceApp: App {
             makeOntologyOverviewActor: { _, _ in ontologyOverviewActor },
             makeMergeOverviewsActor: { _ in mergeOverviewsActor }
         )
-        let agentChannelActor = AgentChannelActor(notificationManager: AgentNotificationManager())
-        let agentActionActor = AgentActionActor(agentActionsDatabaseActor: agentActionsDatabaseActor, channelSender: agentChannelActor)
         let jobsActor = JobsActor(
             jobsDatabaseActor: jobsDatabaseActor,
             actorSystem: actorSystem
         )
         let activityActor = ActivityActor(
             activityDatabaseActor: activityDatabaseActor,
-            actorSystem: actorSystem,
-            agentActionActor: agentActionActor
+            actorSystem: actorSystem
         )
         let captureMonitor = TaskTraceCaptureMonitor()
         let overviewActor = OverviewActor(
@@ -464,19 +454,17 @@ struct TaskTraceApp: App {
             actorSystem: actorSystem
         )
         let analyticsStore = AnalyticsStore(analyticsDatabaseActor: analyticsDatabaseActor, now: Date.init, calendar: Calendar(identifier: .gregorian))
-        let agentActionsStore = AgentActionsStore(agentActionsDatabaseActor: agentActionsDatabaseActor, agentChannelActor: agentChannelActor)
         let navigationStore = TaskTraceNavigationStore()
         let notificationRouter = TaskTraceNotificationRouter(
-            navigationStore: navigationStore,
-            agentActionsSnapshot: {
-                agentActionsStore.agentActions
-            }
+            navigationStore: navigationStore
         )
         let overviewMCPServerController = OverviewMCPServerController(
             overviewStore: overviewStore,
             activityStore: activityStore,
             knowledgeGraphStore: knowledgeGraphStore,
             settingsStore: settingsStore,
+            goalsDatabaseActor: goalsDatabaseActor,
+            actorSystem: actorSystem,
             searchService: searchService,
             graphRAGService: graphRAGService
         )
@@ -493,19 +481,10 @@ struct TaskTraceApp: App {
             knowledgeGraphStore.stop()
             aiStatsStore.stop()
             await overviewMCPServerController.stop()
-            await agentChannelActor.stop()
             await jobsActor.stop()
             await browserPluginSocketController.stop()
-                AgentChannelActor.removeSocketFileIfPresent(at: Vars.openClawChannelSocketPath)
-                BrowserPluginSocketService.removeSocketFileIfPresent(at: Vars.browserPluginSocketPath)
-                OverviewMCPServerRuntime.removeSocketFileIfPresent()
-            }
-        let configureAgentChannel = { @MainActor @Sendable () async in
-            if settingsStore.agentsEnabled {
-                await agentChannelActor.start()
-            } else {
-                await agentChannelActor.setEnabled(false)
-            }
+            BrowserPluginSocketService.removeSocketFileIfPresent(at: Vars.browserPluginSocketPath)
+            OverviewMCPServerRuntime.removeSocketFileIfPresent()
         }
         let loadForegroundStores = { @MainActor @Sendable () async in
             await tagsStore.load()
@@ -547,9 +526,6 @@ struct TaskTraceApp: App {
         self.tagsStore = tagsStore
         self.analyticsStore = analyticsStore
         self.goalsStore = goalsStore
-        self.agentActionActor = agentActionActor
-        self.agentChannelActor = agentChannelActor
-        self.agentActionsStore = agentActionsStore
         self.jobsActor = jobsActor
         self.captureMonitor = captureMonitor
         self.settingsStore = settingsStore
@@ -566,8 +542,6 @@ struct TaskTraceApp: App {
             ? nil
             : TaskTraceStatusItemController(
                 activityStore: activityStore,
-                settingsStore: settingsStore,
-                agentActionsStore: agentActionsStore,
                 onToggleRecording: {
                     Task {
                         await TaskTraceApp.handleRecordingToggle(
@@ -575,12 +549,6 @@ struct TaskTraceApp: App {
                             overviewStore: overviewStore,
                             settingsStore: settingsStore
                         )
-                    }
-                },
-                onSetAgentsEnabled: { isEnabled in
-                    settingsStore.setAgentsEnabled(isEnabled)
-                    Task {
-                        await agentChannelActor.setEnabled(isEnabled)
                     }
                 }
             )
@@ -755,7 +723,6 @@ struct TaskTraceApp: App {
                 await settingsStore.loadPersistedSettings()
                 await settingsStore.requestMissingPermissionsIfNeeded()
                 await loadForegroundStores()
-                await configureAgentChannel()
                 await overviewMCPServerController.start()
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 await siblingProcessController.forceKillSiblingProcesses()
@@ -772,7 +739,6 @@ struct TaskTraceApp: App {
         } else {
             Task {
                 await loadForegroundStores()
-                await configureAgentChannel()
             }
         }
     }
@@ -789,7 +755,6 @@ struct TaskTraceApp: App {
                    let calendarStore,
                    let analyticsStore,
                    let goalsStore,
-                   let agentActionsStore,
                    let tagsStore,
                    let settingsStore,
                    let appUpdater,
@@ -805,7 +770,6 @@ struct TaskTraceApp: App {
                         calendarStore: calendarStore,
                         analyticsStore: analyticsStore,
                         goalsStore: goalsStore,
-                        agentActionsStore: agentActionsStore,
                         tagsStore: tagsStore,
                         settingsStore: settingsStore,
                         shutdownState: applicationShutdownState,
@@ -912,10 +876,7 @@ final class TaskTraceStatusItemController: NSObject {
 
     init(
         activityStore: ActivityStore,
-        settingsStore: SettingsStore,
-        agentActionsStore: AgentActionsStore,
-        onToggleRecording: @escaping () -> Void,
-        onSetAgentsEnabled: @escaping (Bool) -> Void
+        onToggleRecording: @escaping () -> Void
     ) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.popover = NSPopover()
@@ -927,10 +888,7 @@ final class TaskTraceStatusItemController: NSObject {
         popover.contentViewController = TaskTraceGlassPopoverController(
             rootView: AgentStatusPopoverView(
                 activityStore: activityStore,
-                settingsStore: settingsStore,
-                agentActionsStore: agentActionsStore,
                 onToggleRecording: onToggleRecording,
-                onSetAgentsEnabled: onSetAgentsEnabled,
                 onOpenTaskTrace: { [weak self] in
                     self?.openTaskTrace()
                 },

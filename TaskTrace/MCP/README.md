@@ -12,10 +12,19 @@ Main resources:
 - `tasktrace://overviews/active-day`: active-day overview titles, summaries, and durations.
 - `tasktrace://activities/high-level`: recent completed activities with summary-level data.
 - `tasktrace://activities/detailed`: eager recent activity data, including incomplete activities and screenshot metadata.
+- `tasktrace://todos/today`: current-day todos with status, repeat, target, and goal data.
 - `tasktrace://activity/{activityId}/screenshot/{screenshotId}`: screenshot image bytes fetched through a resource template.
 
 Screenshot bytes are intentionally fetched separately rather than embedded in
 the detailed activity feed.
+
+Main tools:
+
+- `tasktrace_search`: ranked search across TaskTrace history.
+- `tasktrace_graph_search`: graph retrieval over configured knowledge sources.
+- `tasktrace_add_todo`: create a todo.
+- `tasktrace_add_goal`: create a goal.
+- `tasktrace_push_message`: show a macOS notification through TaskTrace.
 
 ## Main Files
 
@@ -23,7 +32,6 @@ the detailed activity feed.
 - `TaskTraceMCPStdioProxy.swift`: app-side stdio proxy support.
 - `TaskTraceMCPHelperLauncher.swift`: helper executable discovery and launch.
 - `MCPView.swift`: in-app MCP setup instructions.
-- `TaskTrace/MCP/TaskTraceDomainEvents.swift`: distributed notifications that wake MCP clients after local data changes.
 
 ## Refresh Model
 

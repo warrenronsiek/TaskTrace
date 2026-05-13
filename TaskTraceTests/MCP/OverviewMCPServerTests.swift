@@ -8,6 +8,7 @@
 import Foundation
 import MCP
 import Testing
+import UserNotifications
 @testable import TaskTrace
 
 @MainActor
@@ -106,6 +107,36 @@ struct OverviewMCPServerTests {
         )
 
         #expect(!((await runtime.resourceURIs()).contains(Vars.mcpDetailedActivityResourceURI)))
+    }
+
+    @Test("resource list includes the today todos feed by default")
+    func resourceListIncludesTheTodayTodosFeedByDefault() async {
+        let runtime = OverviewMCPServerRuntime()
+
+        await runtime.update(
+            activeDay: Date(timeIntervalSince1970: 0),
+            overviews: [],
+            activities: [],
+            configuration: .default
+        )
+
+        #expect((await runtime.resourceURIs()).contains(Vars.mcpTodayTodosResourceURI))
+    }
+
+    @Test("resource list omits the today todos feed when it is disabled")
+    func resourceListOmitsTheTodayTodosFeedWhenItIsDisabled() async {
+        let runtime = OverviewMCPServerRuntime()
+        var configuration = SettingsStore.MCPConfiguration.default
+        configuration.todayTodosResourceEnabled = false
+
+        await runtime.update(
+            activeDay: Date(timeIntervalSince1970: 0),
+            overviews: [],
+            activities: [],
+            configuration: configuration
+        )
+
+        #expect(!((await runtime.resourceURIs()).contains(Vars.mcpTodayTodosResourceURI)))
     }
 
     @Test("resource list includes the detailed feed when it is enabled")
@@ -305,6 +336,195 @@ struct OverviewMCPServerTests {
         #expect(screenshotBlob == screenshotData.base64EncodedString())
     }
 
+    @Test("the today todos feed exposes todo names")
+    func theTodayTodosFeedExposesTodoNames() async throws {
+        try await withGoalsRuntime { runtime, goalsDatabaseActor, _, _ in
+            let today = localMCPDate(hour: 9)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Call accountant", createTs: today, status: .open, statusTs: nil, repeating: false, targetDate: today, dailyTargetSeconds: nil))
+
+            await runtime.update(activeDay: today, overviews: [], activities: [], configuration: .default)
+
+            let text = await runtime.resourceContents(uri: Vars.mcpTodayTodosResourceURI)?.first?.text ?? ""
+            #expect(text.contains("Call accountant"))
+        }
+    }
+
+    @Test("the today todos feed exposes goal names")
+    func theTodayTodosFeedExposesGoalNames() async throws {
+        try await withGoalsRuntime { runtime, goalsDatabaseActor, _, _ in
+            let today = localMCPDate(hour: 9)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Finance", description: nil, createTs: today, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Call accountant", createTs: today, status: .open, statusTs: nil, repeating: false, targetDate: today, dailyTargetSeconds: nil))
+
+            await runtime.update(activeDay: today, overviews: [], activities: [], configuration: .default)
+
+            let text = await runtime.resourceContents(uri: Vars.mcpTodayTodosResourceURI)?.first?.text ?? ""
+            #expect(text.contains("Finance"))
+        }
+    }
+
+    @Test("tool list includes the add todo tool when goals are configured")
+    func toolListIncludesTheAddTodoToolWhenGoalsAreConfigured() async throws {
+        try await withGoalsRuntime { runtime, _, _, _ in
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: .default)
+
+            #expect((await runtime.toolNames()).contains(Vars.mcpAddTodoToolName))
+        }
+    }
+
+    @Test("tool list includes the add goal tool when goals are configured")
+    func toolListIncludesTheAddGoalToolWhenGoalsAreConfigured() async throws {
+        try await withGoalsRuntime { runtime, _, _, _ in
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: .default)
+
+            #expect((await runtime.toolNames()).contains(Vars.mcpAddGoalToolName))
+        }
+    }
+
+    @Test("tool list includes the push message tool by default")
+    func toolListIncludesThePushMessageToolByDefault() async {
+        let runtime = OverviewMCPServerRuntime()
+
+        await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: .default)
+
+        #expect((await runtime.toolNames()).contains(Vars.mcpPushMessageToolName))
+    }
+
+    @Test("tool list omits the add todo tool when it is disabled")
+    func toolListOmitsTheAddTodoToolWhenItIsDisabled() async throws {
+        try await withGoalsRuntime { runtime, _, _, _ in
+            var configuration = SettingsStore.MCPConfiguration.default
+            configuration.addTodoToolEnabled = false
+
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: configuration)
+
+            #expect(!((await runtime.toolNames()).contains(Vars.mcpAddTodoToolName)))
+        }
+    }
+
+    @Test("tool list omits the add goal tool when it is disabled")
+    func toolListOmitsTheAddGoalToolWhenItIsDisabled() async throws {
+        try await withGoalsRuntime { runtime, _, _, _ in
+            var configuration = SettingsStore.MCPConfiguration.default
+            configuration.addGoalToolEnabled = false
+
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: configuration)
+
+            #expect(!((await runtime.toolNames()).contains(Vars.mcpAddGoalToolName)))
+        }
+    }
+
+    @Test("tool list omits the push message tool when it is disabled")
+    func toolListOmitsThePushMessageToolWhenItIsDisabled() async {
+        let runtime = OverviewMCPServerRuntime()
+        var configuration = SettingsStore.MCPConfiguration.default
+        configuration.pushMessageToolEnabled = false
+
+        await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: configuration)
+
+        #expect(!((await runtime.toolNames()).contains(Vars.mcpPushMessageToolName)))
+    }
+
+    @Test("add todo tool persists a todo")
+    func addTodoToolPersistsATodo() async throws {
+        try await withGoalsRuntime { runtime, goalsDatabaseActor, _, _ in
+            let today = localMCPDate(hour: 9)
+            await runtime.update(activeDay: today, overviews: [], activities: [], configuration: .default)
+
+            _ = try await runtime.callAddTodoTool(name: "Send invoice")
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(visibleStart: today, visibleEnd: today, selectedDay: today)
+
+            #expect(snapshot.todos.contains { $0.name == "Send invoice" })
+        }
+    }
+
+    @Test("add todo tool attaches a todo to a goal")
+    func addTodoToolAttachesATodoToAGoal() async throws {
+        try await withGoalsRuntime { runtime, goalsDatabaseActor, _, _ in
+            let today = localMCPDate(hour: 9)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Finance", description: nil, createTs: today, doneTs: nil))
+            await runtime.update(activeDay: today, overviews: [], activities: [], configuration: .default)
+
+            _ = try await runtime.callAddTodoTool(name: "Send invoice", goalID: 1)
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(visibleStart: today, visibleEnd: today, selectedDay: today)
+
+            #expect(snapshot.todos.first { $0.name == "Send invoice" }?.goalID == 1)
+        }
+    }
+
+    @Test("add todo tool is rejected when disabled")
+    func addTodoToolIsRejectedWhenDisabled() async throws {
+        try await withGoalsRuntime { runtime, _, _, _ in
+            var configuration = SettingsStore.MCPConfiguration.default
+            configuration.addTodoToolEnabled = false
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: configuration)
+
+            await #expect(throws: MCPError.self) {
+                _ = try await runtime.callAddTodoTool(name: "Send invoice")
+            }
+        }
+    }
+
+    @Test("add goal tool persists a goal")
+    func addGoalToolPersistsAGoal() async throws {
+        try await withGoalsRuntime { runtime, goalsDatabaseActor, _, _ in
+            let today = localMCPDate(hour: 9)
+            await runtime.update(activeDay: today, overviews: [], activities: [], configuration: .default)
+
+            _ = try await runtime.callAddGoalTool(name: "Finish taxes")
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(visibleStart: today, visibleEnd: today, selectedDay: today)
+
+            #expect(snapshot.goals.contains { $0.name == "Finish taxes" })
+        }
+    }
+
+    @Test("add goal tool is rejected when disabled")
+    func addGoalToolIsRejectedWhenDisabled() async throws {
+        try await withGoalsRuntime { runtime, _, _, _ in
+            var configuration = SettingsStore.MCPConfiguration.default
+            configuration.addGoalToolEnabled = false
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: configuration)
+
+            await #expect(throws: MCPError.self) {
+                _ = try await runtime.callAddGoalTool(name: "Finish taxes")
+            }
+        }
+    }
+
+    @Test("push message tool creates a notification")
+    func pushMessageToolCreatesANotification() async throws {
+        let notificationCenter = FakeMCPNotificationCenter()
+        let runtime = OverviewMCPServerRuntime(
+            pushNotificationManager: TaskTracePushNotificationManager(notificationCenter: notificationCenter)
+        )
+        await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: .default)
+
+        _ = try await runtime.callPushMessageTool(message: "Review the failing build.", title: "OpenClaw", source: "Agent")
+
+        #expect(await notificationCenter.requestCount() == 1)
+    }
+
+    @Test("push message tool rejects empty messages")
+    func pushMessageToolRejectsEmptyMessages() async {
+        let runtime = OverviewMCPServerRuntime()
+        await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: .default)
+
+        await #expect(throws: MCPError.self) {
+            _ = try await runtime.callPushMessageTool(message: " ")
+        }
+    }
+
+    @Test("add todo tool broadcasts a goals reload")
+    func addTodoToolBroadcastsAGoalsReload() async throws {
+        try await withGoalsRuntime { runtime, _, _, receiver in
+            await runtime.update(activeDay: localMCPDate(hour: 9), overviews: [], activities: [], configuration: .default)
+
+            _ = try await runtime.callAddTodoTool(name: "Send invoice")
+
+            #expect(await receiver.reloadCount() == 1)
+        }
+    }
+
     @Test("starting the broker creates the socket")
     func startingTheBrokerCreatesTheSocket() async {
         let socketPath = "/tmp/tasktrace-mcp-\(UUID().uuidString).sock"
@@ -366,6 +586,72 @@ private func makeSearchService() -> TaskTraceSearchService {
         ),
         activityAI: activityAI
     )
+}
+
+private func withGoalsRuntime(
+    _ block: (OverviewMCPServerRuntime, GoalsDatabaseActor, TaskTraceDatabase, RecordingGoalsReceiver) async throws -> Void
+) async throws {
+    let rootURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let databaseURL = rootURL.appendingPathComponent("TaskTrace.sqlite")
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    let databaseURLAfterMigration = try TaskTraceDatabaseBootstrap.migrate(databaseURL: databaseURL)
+    let database = try TaskTraceDatabase(databaseURL: databaseURLAfterMigration, activityAI: FakeActivityAI())
+    let goalsDatabaseActor = GoalsDatabaseActor(database: database)
+    let actorSystem = ActorSystem()
+    let receiver = RecordingGoalsReceiver()
+    _ = await actorSystem.register(receiver)
+    let runtime = OverviewMCPServerRuntime(
+        goalsDatabaseActor: goalsDatabaseActor,
+        actorSystem: actorSystem,
+        identifierActor: IdentifierActor(now: { localMCPDate(hour: 12) }, latestIdentifier: 10_000)
+    )
+
+    try await block(runtime, goalsDatabaseActor, database, receiver)
+}
+
+private actor RecordingGoalsReceiver: Receiver {
+    private var count = 0
+
+    func receive(_ envelope: Envelope) async {
+        if envelope.message is GoalsReloadRequested {
+            count += 1
+        }
+    }
+
+    func reloadCount() -> Int {
+        count
+    }
+}
+
+private actor FakeMCPNotificationCenter: TaskTraceUserNotificationCenter {
+    private var requests: [UNNotificationRequest] = []
+
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
+        true
+    }
+
+    func add(_ request: UNNotificationRequest) async throws {
+        requests.append(request)
+    }
+
+    func requestCount() -> Int {
+        requests.count
+    }
+}
+
+private func localMCPDate(hour: Int, minute: Int = 0) -> Date {
+    let calendar = Calendar(identifier: .gregorian)
+    let components = DateComponents(
+        calendar: calendar,
+        timeZone: TimeZone(secondsFromGMT: 0),
+        year: 2026,
+        month: 5,
+        day: 13,
+        hour: hour,
+        minute: minute
+    )
+    return components.date ?? Date(timeIntervalSince1970: 0)
 }
 
 private func makeScreenshot(

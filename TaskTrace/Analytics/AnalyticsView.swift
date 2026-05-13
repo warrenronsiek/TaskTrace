@@ -57,24 +57,42 @@ struct AnalyticsView: View {
 
                 Spacer()
 
-                Picker(
-                    "Tag range",
-                    selection: Binding(
-                        get: { analyticsStore.tagListScope },
-                        set: { scope in
-                            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                                analyticsStore.setTagListScope(scope)
+                HStack(spacing: 8) {
+                    Text(AnalyticsStore.TagListScope.recent14Days.rawValue)
+                        .font(Styles.Fonts.footnoteSemibold)
+                        .foregroundStyle(
+                            analyticsStore.tagListScope == .recent14Days
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary
+                        )
+
+                    Toggle(
+                        "Tag range",
+                        isOn: Binding(
+                            get: { analyticsStore.tagListScope == .allTime },
+                            set: { showsAllTime in
+                                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                                    analyticsStore.setTagListScope(showsAllTime ? .allTime : .recent14Days)
+                                }
                             }
-                        }
+                        )
                     )
-                ) {
-                    ForEach(AnalyticsStore.TagListScope.allCases) { scope in
-                        Text(scope.rawValue).tag(scope)
-                    }
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.large)
+                    .tint(AppColors.accent)
+
+                    Text(AnalyticsStore.TagListScope.allTime.rawValue)
+                        .font(Styles.Fonts.footnoteSemibold)
+                        .foregroundStyle(
+                            analyticsStore.tagListScope == .allTime
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary
+                        )
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 220)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Tag range")
+                .accessibilityValue(analyticsStore.tagListScope.rawValue)
             }
 
             if tagFlowWidth > 0 {

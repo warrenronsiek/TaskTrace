@@ -76,7 +76,6 @@ actor GoalsDatabaseActor {
                             ELSE goal_todos.status_ts
                         END AS status_ts,
                         goal_todos.repeating,
-                        goal_todos.repeat_template_id,
                         goal_todos.target_date,
                         goal_todos.daily_target_seconds,
                         goal_todos.daily_target_mode,
@@ -142,7 +141,6 @@ actor GoalsDatabaseActor {
                     status: GoalTodoStatus(rawValue: row["status"] as String) ?? .open,
                     statusTs: statusTs,
                     repeating: row["repeating"],
-                    repeatTemplateID: row["repeat_template_id"],
                     targetDate: targetDate,
                     dailyTargetSeconds: row["daily_target_seconds"],
                     dailyTargetMode: GoalTodoTargetMode(rawValue: row["daily_target_mode"] as String? ?? "") ?? .minimum,
@@ -273,17 +271,18 @@ actor GoalsDatabaseActor {
                     visibleEndSQL
                 ]
             )
-            let dailyCompletedTodoCounts = try DailyCompletedTodoCount.fetchAll(
+            let dailyTodoOutcomeCounts = try DailyTodoOutcomeCount.fetchAll(
                 db,
                 sql: """
-                    WITH completions AS (
+                    WITH outcomes AS (
                         SELECT
                             goal_todos.id,
                             goal_todos.goal_id,
+                            goal_todos.status,
                             DATE(COALESCE(goal_todos.done_ts, goal_todos.status_ts)) AS day
                         FROM goal_todos
                         LEFT JOIN goals ON goals.id = goal_todos.goal_id
-                        WHERE goal_todos.status = ?
+                        WHERE goal_todos.status IN (?, ?)
                           AND goal_todos.delete_ts IS NULL
                           AND (
                               goal_todos.goal_id IS NULL
@@ -293,8 +292,9 @@ actor GoalsDatabaseActor {
                     SELECT
                         goal_id,
                         day || ' 12:00:00' AS day,
-                        COUNT(*) AS completed_count
-                    FROM completions
+                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed_count,
+                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed_count
+                    FROM outcomes
                     WHERE day IS NOT NULL
                       AND DATE(day) BETWEEN DATE(?) AND DATE(?)
                     GROUP BY goal_id, day
@@ -302,6 +302,9 @@ actor GoalsDatabaseActor {
                     """,
                 arguments: [
                     GoalTodoStatus.done.rawValue,
+                    GoalTodoStatus.failed.rawValue,
+                    GoalTodoStatus.done.rawValue,
+                    GoalTodoStatus.failed.rawValue,
                     visibleStartSQL,
                     visibleEndSQL
                 ]
@@ -313,7 +316,7 @@ actor GoalsDatabaseActor {
                 goalRollups: goalRollups,
                 todoRollups: todoRollups,
                 dailyGoalDurations: dailyGoalDurations,
-                dailyCompletedTodoCounts: dailyCompletedTodoCounts
+                dailyTodoOutcomeCounts: dailyTodoOutcomeCounts
             )
         }
     }
@@ -361,12 +364,11 @@ actor GoalsDatabaseActor {
                         status,
                         status_ts,
                         repeating,
-                        repeat_template_id,
                         target_date,
                         daily_target_seconds,
                         daily_target_mode
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         goal_id = excluded.goal_id,
                         name = excluded.name,
@@ -375,7 +377,6 @@ actor GoalsDatabaseActor {
                         status = excluded.status,
                         status_ts = excluded.status_ts,
                         repeating = excluded.repeating,
-                        repeat_template_id = excluded.repeat_template_id,
                         target_date = excluded.target_date,
                         daily_target_seconds = excluded.daily_target_seconds,
                         daily_target_mode = excluded.daily_target_mode,
@@ -390,7 +391,6 @@ actor GoalsDatabaseActor {
                     todo.status.rawValue,
                     todo.statusTs?.formatted(TaskTraceDatabase.sqlTimestampStyle),
                     todo.repeating,
-                    todo.repeatTemplateID,
                     todo.targetDate?.formatted(TaskTraceDatabase.sqlDateStyle),
                     todo.dailyTargetSeconds,
                     todo.dailyTargetMode.rawValue
@@ -698,7 +698,9 @@ actor GoalsDatabaseActor {
     }
 
     func runDailyMaintenance(now: Date) async throws {
-        let todaySQL = calendar.startOfDay(for: now).formatted(TaskTraceDatabase.sqlDateStyle)
+        let today = calendar.startOfDay(for: now)
+        let todaySQL = today.formatted(TaskTraceDatabase.sqlDateStyle)
+        let yesterdaySQL = calendar.date(byAdding: .day, value: -1, to: today)?.formatted(TaskTraceDatabase.sqlDateStyle) ?? todaySQL
         let nowSQL = now.formatted(TaskTraceDatabase.sqlTimestampStyle)
 
         try database.write { db in
@@ -711,48 +713,51 @@ actor GoalsDatabaseActor {
                         status,
                         status_ts,
                         repeating,
-                        repeat_template_id,
                         target_date,
                         daily_target_seconds,
                         daily_target_mode,
                         embedding
                     )
                     SELECT
-                        templates.goal_id,
-                        templates.name,
+                        source.goal_id,
+                        source.name,
                         ?,
                         ?,
                         NULL,
-                        0,
-                        templates.id,
+                        1,
                         ?,
-                        templates.daily_target_seconds,
-                        templates.daily_target_mode,
+                        source.daily_target_seconds,
+                        source.daily_target_mode,
                         NULL
-                    FROM goal_todos templates
-                    LEFT JOIN goals ON goals.id = templates.goal_id
+                    FROM goal_todos source
+                    LEFT JOIN goals ON goals.id = source.goal_id
                     WHERE (
-                          templates.goal_id IS NULL
+                          source.goal_id IS NULL
                           OR (
                               goals.done_ts IS NULL
                               AND goals.delete_ts IS NULL
                           )
                       )
-                      AND templates.delete_ts IS NULL
-                      AND templates.repeating = 1
-                      AND templates.status = ?
+                      AND source.delete_ts IS NULL
+                      AND source.repeating = 1
+                      AND source.target_date IS NOT NULL
+                      AND DATE(source.target_date) = DATE(?)
                       AND NOT EXISTS (
                           SELECT 1
                           FROM goal_todos existing
-                          WHERE existing.repeat_template_id = templates.id
+                          WHERE existing.repeating = 1
                             AND DATE(existing.target_date) = DATE(?)
+                            AND COALESCE(existing.goal_id, -1) = COALESCE(source.goal_id, -1)
+                            AND existing.name = source.name
+                            AND COALESCE(existing.daily_target_seconds, -1) = COALESCE(source.daily_target_seconds, -1)
+                            AND existing.daily_target_mode = source.daily_target_mode
                       )
                     """,
                 arguments: [
                     nowSQL,
                     GoalTodoStatus.open.rawValue,
                     todaySQL,
-                    GoalTodoStatus.open.rawValue,
+                    yesterdaySQL,
                     todaySQL
                 ]
             )
@@ -854,7 +859,6 @@ actor GoalsDatabaseActor {
                     status: GoalTodoStatus(rawValue: row["status"] as String) ?? .open,
                     statusTs: todoStatusTs,
                     repeating: row["repeating"],
-                    repeatTemplateID: row["repeat_template_id"],
                     targetDate: todoTargetDate,
                     dailyTargetSeconds: row["daily_target_seconds"],
                     dailyTargetMode: GoalTodoTargetMode(rawValue: row["daily_target_mode"] as String? ?? "") ?? .minimum,

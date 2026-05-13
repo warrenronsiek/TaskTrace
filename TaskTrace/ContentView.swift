@@ -22,7 +22,6 @@ struct ContentView: View {
     @ObservedObject var calendarStore: CalendarStore
     @ObservedObject var analyticsStore: AnalyticsStore
     @ObservedObject var goalsStore: GoalsStore
-    @ObservedObject var agentActionsStore: AgentActionsStore
     @ObservedObject var tagsStore: TagsStore
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var shutdownState: TaskTraceApplicationShutdownState
@@ -127,7 +126,6 @@ struct ContentView: View {
                 case .agents:
                     AgentsView(
                         navigationStore: navigationStore,
-                        agentActionsStore: agentActionsStore,
                         settingsStore: settingsStore,
                         skillsStore: skillsStore,
                         onShowTimelineForActivity: { activityID, activityDate in
@@ -313,14 +311,8 @@ struct ContentView: View {
                 Group {
                     ForEach(AgentsView.Tab.allCases) { tab in
                         let subIcon: String = switch tab {
-                        case .chat:
-                            "bubble.left"
                         case .skills:
                             "wand.and.stars"
-                        case .connection:
-                            "link"
-                        case .setup:
-                            "gearshape"
                         case .mcp:
                             "terminal"
                         }
@@ -819,7 +811,6 @@ struct ContentView_Previews: PreviewProvider {
                             status: .open,
                             statusTs: nil,
                             repeating: false,
-                            repeatTemplateID: nil,
                             targetDate: nil,
                             dailyTargetSeconds: 3_600,
                             embedding: nil,
@@ -835,30 +826,15 @@ struct ContentView_Previews: PreviewProvider {
                             duration: 2_400
                         )
                     ],
-                    dailyCompletedTodoCounts: [
-                        DailyCompletedTodoCount(
+                    dailyTodoOutcomeCounts: [
+                        DailyTodoOutcomeCount(
                             goalID: 1,
                             day: Calendar.current.startOfDay(for: Date()),
-                            completedCount: 1
+                            completedCount: 1,
+                            failedCount: 0
                         )
                     ]
                 )
-            ),
-            agentActionsStore: AgentActionsStore(
-                previewAgentActions: [
-                    AgentActionRecord(
-                        id: 1,
-                        instructions: "Review newly summarized activities and decide what needs follow-up.",
-                        eventType: .activitySummarized,
-                        conversationID: "preview-conversation-1"
-                    ),
-                    AgentActionRecord(
-                        id: 2,
-                        instructions: "Check whether this activity should be queued for review.",
-                        eventType: .activitySummarized,
-                        conversationID: "preview-conversation-2"
-                    )
-                ]
             ),
             tagsStore: TagsStore(previewTags: [
                 TagRecord(

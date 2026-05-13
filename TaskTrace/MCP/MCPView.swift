@@ -26,7 +26,6 @@ struct MCPView: View {
             openclaw config unset tools.allow
             openclaw gateway restart
             openclaw mcp list
-            openclaw channels list
             openclaw plugins inspect tasktrace-mcp
             """
         }
@@ -110,7 +109,7 @@ struct MCPView: View {
                                     )
 
                                 if selectedConfiguration == .openClaw {
-                                    Text("For OpenClaw, `openclaw plugins install .` installs the native TaskTrace channel plugin. `openclaw mcp set ...` separately registers the TaskTrace stdio MCP server. `openclaw config unset tools.allow` clears stale upgrade-era allowlists. OpenClaw exposes both retrieval tools, `tasktrace_search` and `tasktrace_graph_search`, plus the TaskTrace feed tools `tasktrace_get_active_day_overviews`, `tasktrace_get_high_level_activities`, `tasktrace_get_detailed_activities`, `tasktrace_list_resources`, `tasktrace_list_resource_templates`, and `tasktrace_read_resource`.")
+                                    Text("For OpenClaw, `openclaw plugins install .` installs the native TaskTrace MCP plugin. `openclaw mcp set ...` registers the TaskTrace stdio MCP server. `openclaw config unset tools.allow` clears stale upgrade-era allowlists. OpenClaw exposes `tasktrace_search`, `tasktrace_graph_search`, `tasktrace_add_todo`, `tasktrace_add_goal`, and `tasktrace_push_message`, plus the TaskTrace feed tools `tasktrace_get_active_day_overviews`, `tasktrace_get_high_level_activities`, `tasktrace_get_detailed_activities`, `tasktrace_list_resources`, `tasktrace_list_resource_templates`, and `tasktrace_read_resource`.")
                                         .font(Styles.Fonts.footnote)
                                         .foregroundStyle(AppColors.textSecondary)
                                         .textSelection(.enabled)
@@ -176,6 +175,17 @@ struct MCPView: View {
                         ),
                         warning: "Warning! Enabling will introduce sensitive data to your agents! FAFO 😉"
                     )
+
+                    MCPResourceRow(
+                        title: "Today Todos Feed",
+                        description: "Publishes the current day's todos with status, repeat settings, daily targets, goal linkage, and tracked duration.",
+                        uri: Vars.mcpTodayTodosResourceURI,
+                        isOn: Binding(
+                            get: { settingsStore.mcpConfiguration.todayTodosResourceEnabled },
+                            set: settingsStore.setTodayTodosResourceEnabled
+                        ),
+                        count: .constant(nil)
+                    )
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
@@ -211,6 +221,53 @@ struct MCPView: View {
                         isOn: Binding(
                             get: { settingsStore.mcpConfiguration.graphSearchToolEnabled },
                             set: settingsStore.setGraphSearchToolEnabled
+                        )
+                    )
+
+                    MCPToolRow(
+                        title: "Add Todo",
+                        description: "Lets an agent create an open todo for today, optionally attached to an existing goal with repeat and daily target settings.",
+                        name: Vars.mcpAddTodoToolName,
+                        parameters: """
+                        name: string
+                        goal_id: number (optional)
+                        repeating: boolean (optional, default false)
+                        target_date: string (optional, YYYY-MM-DD, default today)
+                        daily_target_minutes: number (optional)
+                        daily_target_mode: string (optional, minimum or maximum)
+                        """,
+                        isOn: Binding(
+                            get: { settingsStore.mcpConfiguration.addTodoToolEnabled },
+                            set: settingsStore.setAddTodoToolEnabled
+                        )
+                    )
+
+                    MCPToolRow(
+                        title: "Add Goal",
+                        description: "Lets an agent create a goal with a name and optional description.",
+                        name: Vars.mcpAddGoalToolName,
+                        parameters: """
+                        name: string
+                        description: string (optional)
+                        """,
+                        isOn: Binding(
+                            get: { settingsStore.mcpConfiguration.addGoalToolEnabled },
+                            set: settingsStore.setAddGoalToolEnabled
+                        )
+                    )
+
+                    MCPToolRow(
+                        title: "Push Message",
+                        description: "Lets an agent show a macOS notification through the running TaskTrace app without creating saved messages.",
+                        name: Vars.mcpPushMessageToolName,
+                        parameters: """
+                        message: string
+                        title: string (optional, default TaskTrace)
+                        source: string (optional)
+                        """,
+                        isOn: Binding(
+                            get: { settingsStore.mcpConfiguration.pushMessageToolEnabled },
+                            set: settingsStore.setPushMessageToolEnabled
                         )
                     )
                 }

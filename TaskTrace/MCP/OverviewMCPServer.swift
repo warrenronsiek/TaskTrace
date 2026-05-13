@@ -28,6 +28,8 @@ final class OverviewMCPServerController {
         activityStore: ActivityStore,
         knowledgeGraphStore: KnowledgeGraphStore,
         settingsStore: SettingsStore,
+        goalsDatabaseActor: GoalsDatabaseActor,
+        actorSystem: ActorSystem,
         searchService: TaskTraceSearchService,
         graphRAGService: GraphRAGService
     ) {
@@ -36,6 +38,8 @@ final class OverviewMCPServerController {
         self.knowledgeGraphStore = knowledgeGraphStore
         self.settingsStore = settingsStore
         self.runtime = OverviewMCPServerRuntime(
+            goalsDatabaseActor: goalsDatabaseActor,
+            actorSystem: actorSystem,
             searchService: searchService,
             graphRAGService: graphRAGService
         )
@@ -127,8 +131,12 @@ actor OverviewMCPServerRuntime {
         let overviewResourceEnabled: Bool
         let highLevelActivityResourceEnabled: Bool
         let detailedActivityResourceEnabled: Bool
+        let todayTodosResourceEnabled: Bool
         let searchToolEnabled: Bool
         let graphSearchToolEnabled: Bool
+        let addTodoToolEnabled: Bool
+        let addGoalToolEnabled: Bool
+        let pushMessageToolEnabled: Bool
         let highLevelActivityCount: Int?
         let detailedActivityCount: Int?
     }
@@ -156,6 +164,30 @@ actor OverviewMCPServerRuntime {
     private struct DetailedActivityDocument: Codable, Equatable, Sendable {
         let date: String
         let activities: [DetailedActivitySnapshot]
+    }
+
+    private struct TodayTodosDocument: Codable, Equatable, Sendable {
+        let date: String
+        let todos: [TodayTodoSnapshot]
+    }
+
+    private struct TodayTodoSnapshot: Codable, Equatable, Sendable {
+        let id: Int64
+        let name: String
+        let status: String
+        let createTime: String
+        let statusTime: String?
+        let repeating: Bool
+        let targetDate: String?
+        let dailyTargetSeconds: Int?
+        let dailyTargetMode: String
+        let durationSeconds: Int
+        let goal: TodayTodoGoalSnapshot?
+    }
+
+    private struct TodayTodoGoalSnapshot: Codable, Equatable, Sendable {
+        let id: Int64
+        let name: String
     }
     
     private struct DetailedActivitySnapshot: Codable, Equatable, Sendable {
@@ -202,6 +234,33 @@ actor OverviewMCPServerRuntime {
         let score: Float
         let result: SearchResultTree
     }
+
+    struct AddGoalToolResultDocument: Codable, Equatable, Sendable {
+        let goal: AddedGoalSnapshot
+    }
+
+    struct AddedGoalSnapshot: Codable, Equatable, Sendable {
+        let id: Int64
+        let name: String
+        let description: String?
+        let createTime: String
+    }
+
+    struct AddTodoToolResultDocument: Codable, Equatable, Sendable {
+        let todo: AddedTodoSnapshot
+    }
+
+    struct AddedTodoSnapshot: Codable, Equatable, Sendable {
+        let id: Int64
+        let name: String
+        let status: String
+        let createTime: String
+        let repeating: Bool
+        let targetDate: String?
+        let dailyTargetSeconds: Int?
+        let dailyTargetMode: String
+        let goalID: Int64?
+    }
     
     private let encoder = {
         let encoder = JSONEncoder()
@@ -217,13 +276,19 @@ actor OverviewMCPServerRuntime {
     private var document = OverviewDocument(date: "", overviews: [])
     private var highLevelActivityDocument = HighLevelActivityDocument(date: "", activities: [])
     private var detailedActivityDocument = DetailedActivityDocument(date: "", activities: [])
+    private var todayTodosDocument = TodayTodosDocument(date: "", todos: [])
     private var screenshotResources: [String: ScreenshotResourceSnapshot] = [:]
+    private var activeDay = Date()
     private var resourceConfiguration = ResourceConfiguration(
         overviewResourceEnabled: true,
         highLevelActivityResourceEnabled: true,
         detailedActivityResourceEnabled: false,
+        todayTodosResourceEnabled: true,
         searchToolEnabled: true,
         graphSearchToolEnabled: true,
+        addTodoToolEnabled: true,
+        addGoalToolEnabled: true,
+        pushMessageToolEnabled: true,
         highLevelActivityCount: 5,
         detailedActivityCount: 5
     )
@@ -241,16 +306,34 @@ actor OverviewMCPServerRuntime {
     private var listenerSource: DispatchSourceRead?
     private var sessions: [UUID: ServerSession] = [:]
     private var subscriptions: [UUID: Set<String>] = [:]
+    private let goalsDatabaseActor: GoalsDatabaseActor?
+    private let actorSystem: ActorSystem?
+    private let identifierActor: IdentifierActor
+    private let now: @Sendable () -> Date
+    private let calendar: Calendar
     private let searchService: TaskTraceSearchService?
     private let graphRAGService: GraphRAGService?
+    private let pushNotificationManager: TaskTracePushNotificationManager
     
     init(
+        goalsDatabaseActor: GoalsDatabaseActor? = nil,
+        actorSystem: ActorSystem? = nil,
+        identifierActor: IdentifierActor = .shared,
+        now: @escaping @Sendable () -> Date = Date.init,
+        calendar: Calendar = Calendar(identifier: .gregorian),
         searchService: TaskTraceSearchService? = nil,
         graphRAGService: GraphRAGService? = nil,
+        pushNotificationManager: TaskTracePushNotificationManager = TaskTracePushNotificationManager(),
         socketPath: String = Vars.mcpBrokerSocketPath
     ) {
+        self.goalsDatabaseActor = goalsDatabaseActor
+        self.actorSystem = actorSystem
+        self.identifierActor = identifierActor
+        self.now = now
+        self.calendar = calendar
         self.searchService = searchService
         self.graphRAGService = graphRAGService
+        self.pushNotificationManager = pushNotificationManager
         self.socketPath = socketPath
     }
 
@@ -499,8 +582,12 @@ actor OverviewMCPServerRuntime {
             overviewResourceEnabled: configuration.overviewResourceEnabled,
             highLevelActivityResourceEnabled: configuration.highLevelActivityResourceEnabled,
             detailedActivityResourceEnabled: configuration.detailedActivityResourceEnabled,
+            todayTodosResourceEnabled: configuration.todayTodosResourceEnabled,
             searchToolEnabled: configuration.searchToolEnabled,
             graphSearchToolEnabled: configuration.graphSearchToolEnabled,
+            addTodoToolEnabled: configuration.addTodoToolEnabled,
+            addGoalToolEnabled: configuration.addGoalToolEnabled,
+            pushMessageToolEnabled: configuration.pushMessageToolEnabled,
             highLevelActivityCount: configuration.highLevelActivityCount,
             detailedActivityCount: configuration.detailedActivityCount
         )
@@ -586,6 +673,7 @@ actor OverviewMCPServerRuntime {
                 )
             }
         )
+        let nextTodayTodosDocument = await loadTodayTodosDocument(activeDay: activeDay)
         let nextScreenshotResources = activities
             .suffix(nextConfiguration.detailedActivityCount ?? activities.count)
             .reduce(into: [String: ScreenshotResourceSnapshot]()) { partialResult, activity in
@@ -607,6 +695,7 @@ actor OverviewMCPServerRuntime {
                 nextDocument != document ? Vars.mcpOverviewResourceURI : nil,
                 nextHighLevelActivityDocument != highLevelActivityDocument ? Vars.mcpHighLevelActivityResourceURI : nil,
                 nextDetailedActivityDocument != detailedActivityDocument ? Vars.mcpDetailedActivityResourceURI : nil,
+                nextTodayTodosDocument != todayTodosDocument ? Vars.mcpTodayTodosResourceURI : nil,
             ]
             .compactMap { $0 }
             +
@@ -618,15 +707,21 @@ actor OverviewMCPServerRuntime {
             nextConfiguration.overviewResourceEnabled != resourceConfiguration.overviewResourceEnabled
             || nextConfiguration.highLevelActivityResourceEnabled != resourceConfiguration.highLevelActivityResourceEnabled
             || nextConfiguration.detailedActivityResourceEnabled != resourceConfiguration.detailedActivityResourceEnabled
+            || nextConfiguration.todayTodosResourceEnabled != resourceConfiguration.todayTodosResourceEnabled
             || nextConfiguration.highLevelActivityCount != resourceConfiguration.highLevelActivityCount
             || nextConfiguration.detailedActivityCount != resourceConfiguration.detailedActivityCount
         let didChangeToolList =
             nextConfiguration.searchToolEnabled != resourceConfiguration.searchToolEnabled
             || nextConfiguration.graphSearchToolEnabled != resourceConfiguration.graphSearchToolEnabled
+            || nextConfiguration.addTodoToolEnabled != resourceConfiguration.addTodoToolEnabled
+            || nextConfiguration.addGoalToolEnabled != resourceConfiguration.addGoalToolEnabled
+            || nextConfiguration.pushMessageToolEnabled != resourceConfiguration.pushMessageToolEnabled
         
+        self.activeDay = activeDay
         document = nextDocument
         highLevelActivityDocument = nextHighLevelActivityDocument
         detailedActivityDocument = nextDetailedActivityDocument
+        todayTodosDocument = nextTodayTodosDocument
         screenshotResources = nextScreenshotResources
         resourceConfiguration = nextConfiguration
         
@@ -676,7 +771,7 @@ actor OverviewMCPServerRuntime {
         currentTools().map(\.name)
     }
 
-    func resourceContents(uri: String) -> [Resource.Content]? {
+    func resourceContents(uri: String) async -> [Resource.Content]? {
         if let screenshotResource = screenshotResources[uri],
            resourceConfiguration.detailedActivityResourceEnabled {
             return [.binary(screenshotResource.data, uri: uri, mimeType: screenshotResource.mimeType)]
@@ -689,6 +784,8 @@ actor OverviewMCPServerRuntime {
             try? encoder.encode(highLevelActivityDocument)
         case Vars.mcpDetailedActivityResourceURI:
             try? encoder.encode(detailedActivityDocument)
+        case Vars.mcpTodayTodosResourceURI:
+            try? encoder.encode(await loadTodayTodosDocument(activeDay: activeDay))
         default:
             nil
         }
@@ -699,6 +796,44 @@ actor OverviewMCPServerRuntime {
         }
 
         return [.text(text, uri: uri, mimeType: "application/json")]
+    }
+
+    private func loadTodayTodosDocument(activeDay: Date) async -> TodayTodosDocument {
+        guard let goalsDatabaseActor else {
+            return TodayTodosDocument(date: dateFormatter.string(from: activeDay), todos: [])
+        }
+
+        guard let snapshot = try? await goalsDatabaseActor.loadSnapshot(
+            visibleStart: activeDay,
+            visibleEnd: activeDay,
+            selectedDay: activeDay
+        ) else {
+            return TodayTodosDocument(date: dateFormatter.string(from: activeDay), todos: [])
+        }
+
+        let goalsByID = Dictionary(uniqueKeysWithValues: snapshot.goals.map { ($0.id, $0) })
+        let durationsByTodoID = Dictionary(uniqueKeysWithValues: snapshot.todoRollups.map { ($0.todoID, $0.duration) })
+
+        return TodayTodosDocument(
+            date: dateFormatter.string(from: activeDay),
+            todos: snapshot.todos.map { todo in
+                let goal = todo.goalID.flatMap { goalsByID[$0] }
+
+                return TodayTodoSnapshot(
+                    id: todo.id,
+                    name: todo.name,
+                    status: todo.status.rawValue,
+                    createTime: todo.createTs.ISO8601Format(),
+                    statusTime: todo.statusTs?.ISO8601Format(),
+                    repeating: todo.repeating,
+                    targetDate: todo.targetDate.map { dateFormatter.string(from: $0) },
+                    dailyTargetSeconds: todo.dailyTargetSeconds,
+                    dailyTargetMode: todo.dailyTargetMode.rawValue,
+                    durationSeconds: durationsByTodoID[todo.id] ?? 0,
+                    goal: goal.map { TodayTodoGoalSnapshot(id: $0.id, name: $0.name) }
+                )
+            }
+        )
     }
 
     func callSearchTool(query: String, limit: Int = 10) async throws -> SearchToolResultDocument {
@@ -748,13 +883,155 @@ actor OverviewMCPServerRuntime {
             topN: resolvedLimit
         )
     }
+
+    func callAddGoalTool(
+        name: String,
+        description: String? = nil
+    ) async throws -> AddGoalToolResultDocument {
+        guard resourceConfiguration.addGoalToolEnabled else {
+            throw MCPError.invalidParams("TaskTrace add goal is disabled.")
+        }
+
+        guard let goalsDatabaseActor else {
+            throw MCPError.internalError("TaskTrace goals runtime is unavailable")
+        }
+
+        let submittedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !submittedName.isEmpty else {
+            throw MCPError.invalidParams("Goal name is required.")
+        }
+
+        let submittedDescription = description?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let createTime = now()
+        let goal = GoalInput(
+            id: await identifierActor.makeIdentifier(),
+            name: submittedName,
+            description: submittedDescription?.isEmpty == false ? submittedDescription : nil,
+            createTs: createTime,
+            doneTs: nil
+        )
+
+        try await goalsDatabaseActor.saveGoal(goal)
+        todayTodosDocument = await loadTodayTodosDocument(activeDay: activeDay)
+        await actorSystem?.broadcast(from: nil, message: GoalsReloadRequested())
+        await notifyResourceUpdated(Vars.mcpTodayTodosResourceURI)
+
+        return AddGoalToolResultDocument(
+            goal: AddedGoalSnapshot(
+                id: goal.id,
+                name: goal.name,
+                description: goal.description,
+                createTime: createTime.ISO8601Format()
+            )
+        )
+    }
+
+    func callAddTodoTool(
+        name: String,
+        goalID: Int64? = nil,
+        repeating: Bool = false,
+        targetDate: String? = nil,
+        dailyTargetMinutes: Int? = nil,
+        dailyTargetMode: String? = nil
+    ) async throws -> AddTodoToolResultDocument {
+        guard resourceConfiguration.addTodoToolEnabled else {
+            throw MCPError.invalidParams("TaskTrace add todo is disabled.")
+        }
+
+        guard let goalsDatabaseActor else {
+            throw MCPError.internalError("TaskTrace goals runtime is unavailable")
+        }
+
+        let submittedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !submittedName.isEmpty else {
+            throw MCPError.invalidParams("Todo name is required.")
+        }
+
+        let resolvedTargetDate = try {
+            guard let targetDate else {
+                return calendar.startOfDay(for: activeDay)
+            }
+
+            guard let date = dateFormatter.date(from: targetDate.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                throw MCPError.invalidParams("Todo target_date must use YYYY-MM-DD.")
+            }
+
+            return calendar.startOfDay(for: date)
+        }()
+        let resolvedTargetMode = try {
+            guard let dailyTargetMode else {
+                return GoalTodoTargetMode.minimum
+            }
+
+            guard let targetMode = GoalTodoTargetMode(rawValue: dailyTargetMode.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                throw MCPError.invalidParams("Todo daily_target_mode must be minimum or maximum.")
+            }
+
+            return targetMode
+        }()
+        let dailyTargetSeconds = dailyTargetMinutes.map { max($0, 1) * 60 }
+        let createTime = now()
+        let todo = GoalTodoInput(
+            id: await identifierActor.makeIdentifier(),
+            goalID: goalID,
+            name: submittedName,
+            createTs: createTime,
+            status: .open,
+            statusTs: nil,
+            repeating: repeating,
+            targetDate: resolvedTargetDate,
+            dailyTargetSeconds: dailyTargetSeconds,
+            dailyTargetMode: dailyTargetSeconds == nil ? .minimum : resolvedTargetMode
+        )
+
+        try await goalsDatabaseActor.saveTodo(todo)
+        todayTodosDocument = await loadTodayTodosDocument(activeDay: activeDay)
+        await actorSystem?.broadcast(from: nil, message: GoalsReloadRequested())
+        await notifyResourceUpdated(Vars.mcpTodayTodosResourceURI)
+
+        return AddTodoToolResultDocument(
+            todo: AddedTodoSnapshot(
+                id: todo.id,
+                name: todo.name,
+                status: todo.status.rawValue,
+                createTime: createTime.ISO8601Format(),
+                repeating: todo.repeating,
+                targetDate: todo.targetDate.map { dateFormatter.string(from: $0) },
+                dailyTargetSeconds: todo.dailyTargetSeconds,
+                dailyTargetMode: todo.dailyTargetMode.rawValue,
+                goalID: todo.goalID
+            )
+        )
+    }
+
+    func callPushMessageTool(
+        message: String,
+        title: String? = nil,
+        source: String? = nil
+    ) async throws -> TaskTracePushNotificationResult {
+        guard resourceConfiguration.pushMessageToolEnabled else {
+            throw MCPError.invalidParams("TaskTrace push message is disabled.")
+        }
+
+        let submittedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !submittedMessage.isEmpty else {
+            throw MCPError.invalidParams("Push message is required.")
+        }
+
+        return try await pushNotificationManager.push(
+            title: title,
+            message: submittedMessage,
+            source: source
+        )
+    }
     
     private func makeServer(sessionID: UUID) async -> Server {
         let server = Server(
             name: Vars.mcpServerName,
             version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0",
             title: Vars.mcpServerTitle,
-            instructions: "Read the enabled TaskTrace resources to inspect active-day overviews, lagging summary-only activity recaps, and the eager detailed activity feed. The detailed feed exposes screenshot summaries, descriptions, OCR, and screenshot URIs instead of embedding image bytes. Use resources/read on those screenshot URIs to fetch the binary WebP image bytes. Use the tasktrace_search tool when you need ranked search results for a natural-language query without asking TaskTrace to summarize them. Use the tasktrace_graph_search tool when you need structured graph retrieval over the configured TaskTrace knowledge sources instead of activity history. Subscribe to any enabled resource URI to receive update notifications whenever that feed changes.",
+            instructions: "Read the enabled TaskTrace resources to inspect active-day overviews, today's todos, lagging summary-only activity recaps, and the eager detailed activity feed. The todos feed is the best source for today's planned work and current todo status. The detailed feed exposes screenshot summaries, descriptions, OCR, and screenshot URIs instead of embedding image bytes. Use resources/read on those screenshot URIs to fetch the binary WebP image bytes. Use tasktrace_add_todo when the user asks you to create a todo, tasktrace_add_goal when the user asks you to create a goal, and tasktrace_push_message when the user or agent needs TaskTrace to show a macOS notification. Use the tasktrace_search tool when you need ranked search results for a natural-language query without asking TaskTrace to summarize them. Use the tasktrace_graph_search tool when you need structured graph retrieval over the configured TaskTrace knowledge sources instead of activity history. Subscribe to any enabled resource URI to receive update notifications whenever that feed changes.",
             capabilities: .init(
                 resources: .init(subscribe: true, listChanged: true),
                 tools: .init(listChanged: true)
@@ -866,6 +1143,65 @@ actor OverviewMCPServerRuntime {
                     content: [.text(text: text, annotations: nil, _meta: nil)],
                     isError: false
                 )
+            case Vars.mcpAddTodoToolName:
+                guard let name = params.arguments?["name"]?.stringValue else {
+                    throw MCPError.invalidParams("Todo name is required.")
+                }
+
+                let response = try await self.callAddTodoTool(
+                    name: name,
+                    goalID: params.arguments?["goal_id"]?.intValue.map(Int64.init),
+                    repeating: params.arguments?["repeating"]?.boolValue ?? false,
+                    targetDate: params.arguments?["target_date"]?.stringValue,
+                    dailyTargetMinutes: params.arguments?["daily_target_minutes"]?.intValue,
+                    dailyTargetMode: params.arguments?["daily_target_mode"]?.stringValue
+                )
+                guard let data = try? self.encoder.encode(response),
+                      let text = String(data: data, encoding: .utf8) else {
+                    throw MCPError.internalError("TaskTrace add todo result could not be encoded.")
+                }
+
+                return .init(
+                    content: [.text(text: text, annotations: nil, _meta: nil)],
+                    isError: false
+                )
+            case Vars.mcpAddGoalToolName:
+                guard let name = params.arguments?["name"]?.stringValue else {
+                    throw MCPError.invalidParams("Goal name is required.")
+                }
+
+                let response = try await self.callAddGoalTool(
+                    name: name,
+                    description: params.arguments?["description"]?.stringValue
+                )
+                guard let data = try? self.encoder.encode(response),
+                      let text = String(data: data, encoding: .utf8) else {
+                    throw MCPError.internalError("TaskTrace add goal result could not be encoded.")
+                }
+
+                return .init(
+                    content: [.text(text: text, annotations: nil, _meta: nil)],
+                    isError: false
+                )
+            case Vars.mcpPushMessageToolName:
+                guard let message = params.arguments?["message"]?.stringValue else {
+                    throw MCPError.invalidParams("Push message is required.")
+                }
+
+                let response = try await self.callPushMessageTool(
+                    message: message,
+                    title: params.arguments?["title"]?.stringValue,
+                    source: params.arguments?["source"]?.stringValue
+                )
+                guard let data = try? self.encoder.encode(response),
+                      let text = String(data: data, encoding: .utf8) else {
+                    throw MCPError.internalError("TaskTrace push message result could not be encoded.")
+                }
+
+                return .init(
+                    content: [.text(text: text, annotations: nil, _meta: nil)],
+                    isError: false
+                )
             default:
                 throw MCPError.invalidParams("Unknown tool: \(params.name)")
             }
@@ -880,6 +1216,20 @@ actor OverviewMCPServerRuntime {
     
     private func unsubscribe(uri: String, sessionID: UUID) {
         subscriptions[sessionID]?.remove(uri)
+    }
+
+    private func notifyResourceUpdated(_ resourceURI: String) async {
+        let subscribedSessionIDs = subscriptions
+            .filter { $0.value.contains(resourceURI) }
+            .map(\.key)
+
+        for sessionID in subscribedSessionIDs {
+            guard let session = sessions[sessionID] else {
+                continue
+            }
+
+            try? await session.server.notify(ResourceUpdatedNotification.message(.init(uri: resourceURI)))
+        }
     }
     
     private func currentResources() -> [Resource] {
@@ -908,6 +1258,15 @@ actor OverviewMCPServerRuntime {
                 uri: Vars.mcpDetailedActivityResourceURI,
                 title: "TaskTrace Detailed Activities",
                 description: "Use when the agent needs exact current or very recent evidence instead of a summary, such as 'what am I doing right now?', 'what did I type?', 'what did the meeting say?', or 'what was on screen?'. Returns the eager recent-activity feed for today/current context, including incomplete activities, keystrokes, transcript text, summary when available, and screenshot metadata such as description and OCR. Screenshot bytes are fetched separately by reading the screenshot URIs referenced in this feed. For older historical investigation, prefer tasktrace_search.",
+                mimeType: "application/json"
+            )
+            : nil,
+            resourceConfiguration.todayTodosResourceEnabled
+            ? Resource(
+                name: "TaskTrace Today Todos",
+                uri: Vars.mcpTodayTodosResourceURI,
+                title: "TaskTrace Today Todos",
+                description: "Use for questions about what the user needs to do today, which todos are open, done, failed, repeating, attached to goals, or have daily time targets. Returns the current day's visible todos with status, target date, goal linkage, daily target settings, and tracked duration. If the user wants to create new work items, use tasktrace_add_todo or tasktrace_add_goal instead of only reading this resource.",
                 mimeType: "application/json"
             )
             : nil
@@ -972,7 +1331,85 @@ actor OverviewMCPServerRuntime {
                         "additionalProperties": false
                     ])
                 )
-            } : nil
+            } : nil,
+            resourceConfiguration.addTodoToolEnabled && goalsDatabaseActor != nil ? Tool(
+                name: Vars.mcpAddTodoToolName,
+                description: "Use only when the user asks you to create, add, or remember a concrete todo/task in TaskTrace. Creates an open todo for today's plan by default. Attach it to an existing goal with goal_id when the user specifies the goal or when you have just read today's todos and know the correct goal id. Use repeating for tasks that should be recreated on future days. Use daily_target_minutes and daily_target_mode for time-based minimum or maximum targets.",
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": [
+                        "name": [
+                            "type": "string",
+                            "description": "Short todo text to show in TaskTrace, such as 'Call the accountant' or 'Draft billing email'."
+                        ],
+                        "goal_id": [
+                            "type": "number",
+                            "description": "Optional existing TaskTrace goal id to attach this todo to. Omit for a standalone todo."
+                        ],
+                        "repeating": [
+                            "type": "boolean",
+                            "description": "Set true only when this todo should be recreated on future days. Defaults to false."
+                        ],
+                        "target_date": [
+                            "type": "string",
+                            "description": "Optional YYYY-MM-DD date for when the todo should appear. Defaults to today."
+                        ],
+                        "daily_target_minutes": [
+                            "type": "number",
+                            "description": "Optional daily time target in minutes. Omit when the todo has no time target."
+                        ],
+                        "daily_target_mode": [
+                            "type": "string",
+                            "enum": ["minimum", "maximum"],
+                            "description": "Use minimum for tasks the user wants to spend at least this much time on, or maximum for things the user wants to limit."
+                        ]
+                    ],
+                    "required": ["name"],
+                    "additionalProperties": false
+                ])
+            ) : nil,
+            resourceConfiguration.addGoalToolEnabled && goalsDatabaseActor != nil ? Tool(
+                name: Vars.mcpAddGoalToolName,
+                description: "Use only when the user asks you to create, add, or remember a broader TaskTrace goal. Goals group todos and represent ongoing objectives, projects, or habits. For a single concrete action, prefer tasktrace_add_todo.",
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": [
+                        "name": [
+                            "type": "string",
+                            "description": "Goal name to show in TaskTrace, such as 'Finish taxes' or 'Improve sleep routine'."
+                        ],
+                        "description": [
+                            "type": "string",
+                            "description": "Optional context, constraints, or success criteria for the goal."
+                        ]
+                    ],
+                    "required": ["name"],
+                    "additionalProperties": false
+                ])
+            ) : nil,
+            resourceConfiguration.pushMessageToolEnabled ? Tool(
+                name: Vars.mcpPushMessageToolName,
+                description: "Use when an agent needs TaskTrace to immediately show the user a macOS notification. This is a direct push notification only; it does not create todos, goals, or persistent messages.",
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": [
+                        "message": [
+                            "type": "string",
+                            "description": "Notification body to show to the user. Keep it concise and actionable."
+                        ],
+                        "title": [
+                            "type": "string",
+                            "description": "Optional notification title. Defaults to TaskTrace."
+                        ],
+                        "source": [
+                            "type": "string",
+                            "description": "Optional short source label, such as OpenClaw or the agent name."
+                        ]
+                    ],
+                    "required": ["message"],
+                    "additionalProperties": false
+                ])
+            ) : nil
         ]
         .compactMap { $0 }
     }
@@ -985,6 +1422,8 @@ actor OverviewMCPServerRuntime {
             resourceConfiguration.highLevelActivityResourceEnabled
         case Vars.mcpDetailedActivityResourceURI:
             resourceConfiguration.detailedActivityResourceEnabled
+        case Vars.mcpTodayTodosResourceURI:
+            resourceConfiguration.todayTodosResourceEnabled
         default:
             resourceConfiguration.detailedActivityResourceEnabled && screenshotResources[uri] != nil
         }

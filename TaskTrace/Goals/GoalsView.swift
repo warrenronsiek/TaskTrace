@@ -264,7 +264,7 @@ struct GoalsView: View {
                 }
 
                 HStack(spacing: 8) {
-                    if todo.repeating || todo.repeatTemplateID != nil {
+                    if todo.repeating {
                         Label("Repeats", systemImage: "repeat")
                     }
 
@@ -343,7 +343,7 @@ struct GoalsView: View {
                 .padding(.vertical, 10)
                 .background(AppColors.insetBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            Toggle(goalID == nil ? "Repeat daily until deleted" : "Repeat daily while goal is open", isOn: $goalsStore.todoRepeating)
+            Toggle("Repeat daily until deleted", isOn: $goalsStore.todoRepeating)
 
             Toggle("Daily time target", isOn: $goalsStore.todoHasDailyTarget)
 
@@ -429,8 +429,11 @@ private struct GoalsWeeklyChart: View {
         )
     }
 
-    private var maxCompletedCount: Int {
-        max(days.map { goalsStore.completedTodoCount(on: $0) }.max() ?? 0, 1)
+    private var maxOutcomeCount: Int {
+        max(
+            days.map { max(goalsStore.completedTodoCount(on: $0), goalsStore.failedTodoCount(on: $0)) }.max() ?? 0,
+            1
+        )
     }
 
     var body: some View {
@@ -472,8 +475,8 @@ private struct GoalsWeeklyChart: View {
                     .frame(width: chartWidth)
 
                     yAxis(
-                        top: "\(maxCompletedCount)",
-                        bottom: "0",
+                        top: "\(maxOutcomeCount)",
+                        bottom: "-\(maxOutcomeCount)",
                         width: 24,
                         height: chartHeight
                     )
@@ -517,23 +520,46 @@ private struct GoalsWeeklyChart: View {
                     .offset(y: height - height * fraction)
             }
 
+            let outcomeBaselineY = height * 0.68
+
+            Rectangle()
+                .fill(AppColors.textSecondary.opacity(0.26))
+                .frame(height: 1)
+                .offset(y: outcomeBaselineY)
+
             ForEach(Array(days.enumerated()), id: \.offset) { pair in
                 let barWidth = max(width / CGFloat(max(days.count, 1)) * 0.34, 8)
 
-                ZStack(alignment: .bottom) {
+                ZStack(alignment: .top) {
                     VStack(spacing: 0) {
                         ForEach(completedBarSegments(on: pair.element).reversed()) { segment in
                             Rectangle()
                                 .fill(segment.color.opacity(0.58))
                                 .frame(
                                     width: barWidth,
-                                    height: CGFloat(segment.count) / CGFloat(maxCompletedCount) * height
+                                    height: CGFloat(segment.count) / CGFloat(maxOutcomeCount) * outcomeBaselineY
                                 )
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .frame(width: barWidth, height: outcomeBaselineY, alignment: .bottom)
+                    .offset(y: 0)
+
+                    VStack(spacing: 0) {
+                        ForEach(failedBarSegments(on: pair.element)) { segment in
+                            Rectangle()
+                                .fill(segment.color.opacity(0.72))
+                                .frame(
+                                    width: barWidth,
+                                    height: CGFloat(segment.count) / CGFloat(maxOutcomeCount) * (height - outcomeBaselineY)
+                                )
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .frame(width: barWidth, height: height - outcomeBaselineY, alignment: .top)
+                    .offset(y: outcomeBaselineY)
                 }
-                .frame(width: barWidth, height: height, alignment: .bottom)
+                .frame(width: barWidth, height: height, alignment: .top)
                 .position(
                     x: xPosition(index: pair.offset, width: width),
                     y: height / 2
@@ -638,6 +664,20 @@ private struct GoalsWeeklyChart: View {
         ].compactMap { $0 }
     }
 
+    private func failedBarSegments(on day: Date) -> [CompletedTodoBarSegment] {
+        let goalSegments = goals.compactMap { goal in
+            let count = goalsStore.failedTodoCount(goalID: goal.id, on: day)
+            return count > 0 ? CompletedTodoBarSegment(id: "failed-goal-\(goal.id)", color: AppColors.danger, count: count) : nil
+        }
+        let standaloneCount = goalsStore.failedTodoCount(goalID: nil, on: day)
+
+        return goalSegments + [
+            standaloneCount > 0
+                ? CompletedTodoBarSegment(id: "failed-standalone", color: AppColors.danger, count: standaloneCount)
+                : nil
+        ].compactMap { $0 }
+    }
+
     private func yAxis(
         top: String,
         bottom: String,
@@ -737,9 +777,9 @@ private struct TodoCompletionButton: View {
                             .strokeBorder(strokeColor, lineWidth: 1.4)
                     }
 
-                Image(systemName: "checkmark")
+                Image(systemName: status == .failed ? "xmark" : "checkmark")
                     .font(.system(size: 24, weight: .black))
-                    .foregroundStyle(isDone || isChecking ? AppColors.textOnAccent : .clear)
+                    .foregroundStyle(iconColor)
                     .scaleEffect(isChecking ? 1.28 : 1)
 
                 if isChecking {
@@ -778,6 +818,18 @@ private struct TodoCompletionButton: View {
         }
 
         return AppColors.textSecondary.opacity(0.28)
+    }
+
+    private var iconColor: Color {
+        if isDone || isChecking {
+            return AppColors.textOnAccent
+        }
+
+        if status == .failed {
+            return AppColors.danger
+        }
+
+        return .clear
     }
 }
 

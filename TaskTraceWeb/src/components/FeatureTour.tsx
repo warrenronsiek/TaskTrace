@@ -105,14 +105,14 @@ const SECTIONS: TourSection[] = [
   {
     nav: 'Agents',
     label: 'Agents',
-    headline: 'AI that reacts\nto your work.',
+    headline: 'Skills and context\nfor agents.',
     description:
-      'Define triggers that fire when TaskTrace events occur — like an activity being summarized or an overview being created. OpenClaw picks them up, runs research, and responds in a live chat thread.',
+      'TaskTrace gives agents current work context, reusable skills, and direct MCP tools for reading activity, creating todos, and pushing notifications when something needs attention.',
     bullets: [
-      'Event-driven triggers fire on activity summaries and overview creation',
-      'Each action maintains its own persistent conversation thread',
-      'Live chat for follow-up questions and deeper context',
-      'High-priority responses surface as macOS notifications',
+      'Generated skills turn repeated workflows into reusable procedures',
+      'MCP resources expose current activity, todos, screenshots, and graph search',
+      'Agents can create todos and goals through TaskTrace tools',
+      'Agent messages can surface as macOS notifications',
     ],
   },
   {
@@ -758,12 +758,12 @@ function SmallWikiVisual() {
   );
 }
 
-// 6 — Agents: animated event flow
+// 6 — Agents: skills and MCP tools
 function AgentsVisual() {
   const events = [
-    { label: 'Activity Summarized', icon: '⚡' },
-    { label: 'Overview Created',    icon: '📋' },
-    { label: 'Tag Assigned',        icon: '🏷' },
+    { label: 'Generated Skills', icon: '⚡' },
+    { label: 'MCP Context',      icon: '📋' },
+    { label: 'Push Message',     icon: '🏷' },
   ];
 
   return (

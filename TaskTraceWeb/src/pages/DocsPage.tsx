@@ -274,9 +274,9 @@ npm run install:codex-local`} />
 
             <h3 style={styles.h3}>OpenClaw</h3>
             <p style={styles.body}>
-              Clone the plugin repo locally, install the native TaskTrace channel plugin, register
-              the TaskTrace stdio MCP server separately, clear stale upgrade-era allowlists, restart
-              the gateway, then inspect the MCP and channel registration:
+              Clone the plugin repo locally, install the native TaskTrace MCP plugin, register
+              the TaskTrace stdio MCP server, clear stale upgrade-era allowlists, restart
+              the gateway, then inspect the MCP registration:
             </p>
             <CodeBlock code={`git clone https://github.com/warrenronsiek/TaskTraceMCPPlugin.git
 cd TaskTraceMCPPlugin
@@ -284,12 +284,11 @@ openclaw plugins install .
 openclaw mcp set tasktrace '{"command":"/Applications/TaskTrace.app/Contents/MacOS/TaskTrace","args":["--mcp-stdio"]}'
 openclaw config unset tools.allow
 openclaw gateway restart
-openclaw plugins inspect tasktrace-mcp
-openclaw channels list`} />
+openclaw plugins inspect tasktrace-mcp`} />
             <p style={styles.body}>
-              OpenClaw also gets the native <code style={styles.codeInline}>tasktrace</code> channel
-              bridge over a local Unix socket, which lets agents exchange live messages with the
-              running TaskTrace app.
+              OpenClaw can call TaskTrace tools over MCP, including{' '}
+              <code style={styles.codeInline}>tasktrace_push_message</code> for sending a macOS
+              notification through the running TaskTrace app.
             </p>
 
             <h3 style={styles.h3}>Generic <code style={styles.codeInline}>.mcp.json</code></h3>
@@ -331,19 +330,16 @@ openclaw channels list`} />
   }
 }`} />
             <p style={styles.body}>
-              The OpenClaw channel bridge auto-discovers the standard TaskTrace socket paths for
-              prod, local, and dev builds. To force a specific app instance, set{' '}
-              <code style={styles.codeInline}>TASKTRACE_SOCKET_PATH</code> before starting the
-              OpenClaw gateway.
-            </p>
-            <p style={styles.body}>
               OpenClaw exposes these resource-backed tools on top of the registered TaskTrace MCP
               server: <code style={styles.codeInline}>tasktrace_list_resources</code>,{' '}
               <code style={styles.codeInline}>tasktrace_list_resource_templates</code>,{' '}
               <code style={styles.codeInline}>tasktrace_get_active_day_overviews</code>,{' '}
               <code style={styles.codeInline}>tasktrace_get_high_level_activities</code>,{' '}
               <code style={styles.codeInline}>tasktrace_get_detailed_activities</code>, and{' '}
-              <code style={styles.codeInline}>tasktrace_read_resource</code>.
+              <code style={styles.codeInline}>tasktrace_read_resource</code>, plus write tools like{' '}
+              <code style={styles.codeInline}>tasktrace_add_todo</code>,{' '}
+              <code style={styles.codeInline}>tasktrace_add_goal</code>, and{' '}
+              <code style={styles.codeInline}>tasktrace_push_message</code>.
             </p>
           </section>
         </main>

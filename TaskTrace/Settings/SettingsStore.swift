@@ -69,8 +69,12 @@ final class SettingsStore: ObservableObject {
         var overviewResourceEnabled: Bool
         var highLevelActivityResourceEnabled: Bool
         var detailedActivityResourceEnabled: Bool
+        var todayTodosResourceEnabled: Bool
         var searchToolEnabled: Bool
         var graphSearchToolEnabled: Bool
+        var addTodoToolEnabled: Bool
+        var addGoalToolEnabled: Bool
+        var pushMessageToolEnabled: Bool
         var highLevelActivityCount: Int?
         var detailedActivityCount: Int?
 
@@ -79,8 +83,12 @@ final class SettingsStore: ObservableObject {
             overviewResourceEnabled: true,
             highLevelActivityResourceEnabled: true,
             detailedActivityResourceEnabled: false,
+            todayTodosResourceEnabled: true,
             searchToolEnabled: true,
             graphSearchToolEnabled: true,
+            addTodoToolEnabled: true,
+            addGoalToolEnabled: true,
+            pushMessageToolEnabled: true,
             highLevelActivityCount: 5,
             detailedActivityCount: 5
         )
@@ -89,7 +97,6 @@ final class SettingsStore: ObservableObject {
     @Published private(set) var permissionStatus: TaskTracePermissionStatus
     @Published private(set) var microphoneCaptureEnabled: Bool
     @Published private(set) var autoRecordOnLaunchEnabled: Bool
-    @Published private(set) var agentsEnabled: Bool
     @Published private(set) var mcpConfiguration: MCPConfiguration
     @Published private(set) var launchAtLoginStatus: TaskTraceLaunchAtLoginStatus
 
@@ -113,7 +120,6 @@ final class SettingsStore: ObservableObject {
         self.permissionStatus = permissionManager.status()
         self.microphoneCaptureEnabled = true
         self.autoRecordOnLaunchEnabled = false
-        self.agentsEnabled = true
         self.mcpConfiguration = .default
         self.launchAtLoginStatus = launchAtLoginController.status()
         self.permissionRuntimeObserver = notificationCenter.addObserver(
@@ -202,12 +208,15 @@ final class SettingsStore: ObservableObject {
         let serverEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.serverEnabled")
         let microphoneCaptureEnabledValue = try? await settingsDatabaseActor.getSetting(named: "capture.microphoneEnabled")
         let autoRecordOnLaunchEnabledValue = try? await settingsDatabaseActor.getSetting(named: "capture.autoRecordOnLaunchEnabled")
-        let agentsEnabledValue = try? await settingsDatabaseActor.getSetting(named: "agents.enabled")
         let overviewEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.overviewResourceEnabled")
         let highLevelEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.highLevelActivityResourceEnabled")
         let detailedEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.detailedActivityResourceEnabled")
+        let todayTodosEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.todayTodosResourceEnabled")
         let searchToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.searchToolEnabled")
         let graphSearchToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.graphSearchToolEnabled")
+        let addTodoToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.addTodoToolEnabled")
+        let addGoalToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.addGoalToolEnabled")
+        let pushMessageToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.pushMessageToolEnabled")
         let highLevelCountValue = try? await settingsDatabaseActor.getSetting(named: "mcp.highLevelActivityCount")
         let detailedCountValue = try? await settingsDatabaseActor.getSetting(named: "mcp.detailedActivityCount")
 
@@ -222,14 +231,17 @@ final class SettingsStore: ObservableObject {
         }
         microphoneCaptureEnabled = valueForBool(microphoneCaptureEnabledValue, true)
         autoRecordOnLaunchEnabled = valueForBool(autoRecordOnLaunchEnabledValue, false)
-        agentsEnabled = valueForBool(agentsEnabledValue, true)
         mcpConfiguration = MCPConfiguration(
             serverEnabled: valueForBool(serverEnabledValue, true),
             overviewResourceEnabled: valueForBool(overviewEnabledValue, true),
             highLevelActivityResourceEnabled: valueForBool(highLevelEnabledValue, true),
             detailedActivityResourceEnabled: valueForBool(detailedEnabledValue, false),
+            todayTodosResourceEnabled: valueForBool(todayTodosEnabledValue, true),
             searchToolEnabled: valueForBool(searchToolEnabledValue, true),
             graphSearchToolEnabled: valueForBool(graphSearchToolEnabledValue, true),
+            addTodoToolEnabled: valueForBool(addTodoToolEnabledValue, true),
+            addGoalToolEnabled: valueForBool(addGoalToolEnabledValue, true),
+            pushMessageToolEnabled: valueForBool(pushMessageToolEnabledValue, true),
             highLevelActivityCount: valueForCount(highLevelCountValue, 5),
             detailedActivityCount: valueForCount(detailedCountValue, 5)
         )
@@ -253,11 +265,6 @@ final class SettingsStore: ObservableObject {
         persistSetting(named: "capture.autoRecordOnLaunchEnabled", value: String(isEnabled))
     }
 
-    func setAgentsEnabled(_ isEnabled: Bool) {
-        agentsEnabled = isEnabled
-        persistSetting(named: "agents.enabled", value: String(isEnabled))
-    }
-
     func setOverviewResourceEnabled(_ isEnabled: Bool) {
         var updatedConfiguration = mcpConfiguration
         updatedConfiguration.overviewResourceEnabled = isEnabled
@@ -279,6 +286,13 @@ final class SettingsStore: ObservableObject {
         persistSetting(named: "mcp.detailedActivityResourceEnabled", value: String(isEnabled))
     }
 
+    func setTodayTodosResourceEnabled(_ isEnabled: Bool) {
+        var updatedConfiguration = mcpConfiguration
+        updatedConfiguration.todayTodosResourceEnabled = isEnabled
+        mcpConfiguration = updatedConfiguration
+        persistSetting(named: "mcp.todayTodosResourceEnabled", value: String(isEnabled))
+    }
+
     func setSearchToolEnabled(_ isEnabled: Bool) {
         var updatedConfiguration = mcpConfiguration
         updatedConfiguration.searchToolEnabled = isEnabled
@@ -291,6 +305,27 @@ final class SettingsStore: ObservableObject {
         updatedConfiguration.graphSearchToolEnabled = isEnabled
         mcpConfiguration = updatedConfiguration
         persistSetting(named: "mcp.graphSearchToolEnabled", value: String(isEnabled))
+    }
+
+    func setAddTodoToolEnabled(_ isEnabled: Bool) {
+        var updatedConfiguration = mcpConfiguration
+        updatedConfiguration.addTodoToolEnabled = isEnabled
+        mcpConfiguration = updatedConfiguration
+        persistSetting(named: "mcp.addTodoToolEnabled", value: String(isEnabled))
+    }
+
+    func setAddGoalToolEnabled(_ isEnabled: Bool) {
+        var updatedConfiguration = mcpConfiguration
+        updatedConfiguration.addGoalToolEnabled = isEnabled
+        mcpConfiguration = updatedConfiguration
+        persistSetting(named: "mcp.addGoalToolEnabled", value: String(isEnabled))
+    }
+
+    func setPushMessageToolEnabled(_ isEnabled: Bool) {
+        var updatedConfiguration = mcpConfiguration
+        updatedConfiguration.pushMessageToolEnabled = isEnabled
+        mcpConfiguration = updatedConfiguration
+        persistSetting(named: "mcp.pushMessageToolEnabled", value: String(isEnabled))
     }
 
     func setHighLevelActivityCount(_ count: Int?) {

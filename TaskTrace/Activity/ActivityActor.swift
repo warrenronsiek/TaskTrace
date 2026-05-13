@@ -82,7 +82,6 @@ actor ActivityActor: Receiver {
 
     private let activityDatabaseActor: ActivityDatabaseActor
     private let actorSystem: ActorSystem
-    private let agentActionActor: AgentActionActor?
     private let identifierActor: IdentifierActor
     private let now: @Sendable () -> Date
 
@@ -102,12 +101,10 @@ actor ActivityActor: Receiver {
 
     init(
         activityDatabaseActor: ActivityDatabaseActor,
-        actorSystem: ActorSystem = ActorSystem(),
-        agentActionActor: AgentActionActor? = nil
+        actorSystem: ActorSystem = ActorSystem()
     ) {
         self.activityDatabaseActor = activityDatabaseActor
         self.actorSystem = actorSystem
-        self.agentActionActor = agentActionActor
         self.identifierActor = .shared
         self.now = Date.init
         self.activities = []
@@ -117,14 +114,12 @@ actor ActivityActor: Receiver {
     init(
         activityDatabaseActor: ActivityDatabaseActor,
         actorSystem: ActorSystem = ActorSystem(),
-        agentActionActor: AgentActionActor? = nil,
         now: @escaping @Sendable () -> Date,
         identifierActor: IdentifierActor? = nil,
         nextIdentifier: Int64? = nil
     ) {
         self.activityDatabaseActor = activityDatabaseActor
         self.actorSystem = actorSystem
-        self.agentActionActor = agentActionActor
         self.identifierActor = identifierActor ?? IdentifierActor(
             now: now,
             latestIdentifier: (nextIdentifier ?? Int64(now().timeIntervalSince1970 * 1_000)) - 1
@@ -219,9 +214,6 @@ actor ActivityActor: Receiver {
             activities[activityIndex].summary = event.activity.summary
             broadcast()
 
-            if !(event.activity.summary?.isEmpty ?? true), activities[activityIndex].tagID == nil {
-                await agentActionActor?.activitySummarized()
-            }
         case let event as ActivityTagAssigned:
             logger.log(
                 "activity-actor received activity-tag-assigned sender=\(envelope.sender?.uuidString ?? "<nil>", privacy: .public) activityID=\(event.activityID, privacy: .public) tagID=\(event.tagID, privacy: .public)"

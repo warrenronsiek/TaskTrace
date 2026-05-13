@@ -37,7 +37,7 @@ enum TaskTraceDatabaseBootstrap {
     nonisolated static let activitySummaryVectorIndexTableName = "activity_summary_vector_index"
     nonisolated static let activitySummaryVectorIndexDirtyIDsTableName = "activity_summary_vector_index_dirty_ids"
     nonisolated static let activitySummaryVectorIndexSchemaVersion = 34
-    nonisolated static let currentVersion = 48
+    nonisolated static let currentVersion = 50
 
     nonisolated static func resolvedDatabaseURL(
         _ databaseURL: URL?,
@@ -757,14 +757,6 @@ enum TaskTraceDatabaseBootstrap {
         }
 
         migrator.registerMigration("v10_add_agent_actions") { db in
-            try db.create(table: "agent_actions", ifNotExists: true) { t in
-                t.column("id", .integer).primaryKey()
-                t.column("instructions", .text).notNull()
-                t.column("event_type", .text).notNull()
-                t.column("event_payload", .text)
-                t.column("conversation_id", .text).notNull()
-            }
-
             try db.execute(sql: "DELETE FROM versions")
             try db.execute(sql: "INSERT INTO versions (version) VALUES (10)")
         }
@@ -2170,6 +2162,111 @@ enum TaskTraceDatabaseBootstrap {
 
             try db.execute(sql: "DELETE FROM versions")
             try db.execute(sql: "INSERT INTO versions (version) VALUES (48)")
+        }
+
+        migrator.registerMigration("v49_remove_goal_todo_repeat_templates") { db in
+            let todoColumns = try db.columns(in: "goal_todos").map(\.name)
+
+            guard todoColumns.contains("repeat_template_id") else {
+                try db.execute(sql: "DELETE FROM versions")
+                try db.execute(sql: "INSERT INTO versions (version) VALUES (49)")
+                return
+            }
+
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_goal_todos_goal_status")
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_goal_todos_repeat_instance")
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_goal_todos_visible")
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_goal_todos_repeating_target")
+
+            try db.execute(
+                sql: """
+                    CREATE TABLE goal_todos_rebuild (
+                        id INTEGER PRIMARY KEY,
+                        goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        create_ts DATETIME NOT NULL,
+                        done_ts DATETIME,
+                        status TEXT NOT NULL DEFAULT 'open',
+                        status_ts DATETIME,
+                        repeating BOOLEAN NOT NULL DEFAULT 0,
+                        target_date DATE,
+                        daily_target_seconds INTEGER,
+                        daily_target_mode TEXT NOT NULL DEFAULT 'minimum',
+                        embedding BLOB,
+                        delete_ts DATETIME
+                    )
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO goal_todos_rebuild (
+                        id,
+                        goal_id,
+                        name,
+                        create_ts,
+                        done_ts,
+                        status,
+                        status_ts,
+                        repeating,
+                        target_date,
+                        daily_target_seconds,
+                        daily_target_mode,
+                        embedding,
+                        delete_ts
+                    )
+                    SELECT
+                        id,
+                        goal_id,
+                        name,
+                        create_ts,
+                        done_ts,
+                        status,
+                        status_ts,
+                        CASE WHEN repeating OR repeat_template_id IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE
+                            WHEN (repeating OR repeat_template_id IS NOT NULL) AND target_date IS NULL THEN DATE(create_ts)
+                            ELSE target_date
+                        END,
+                        daily_target_seconds,
+                        COALESCE(daily_target_mode, 'minimum'),
+                        embedding,
+                        delete_ts
+                    FROM goal_todos
+                    """
+            )
+            try db.execute(sql: "DROP TABLE goal_todos")
+            try db.execute(sql: "ALTER TABLE goal_todos_rebuild RENAME TO goal_todos")
+
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goal_todos_goal_status
+                    ON goal_todos(goal_id, status, target_date)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goal_todos_visible
+                    ON goal_todos(delete_ts, goal_id, status, target_date)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX IF NOT EXISTS idx_goal_todos_repeating_target
+                    ON goal_todos(repeating, target_date, delete_ts)
+                    """
+            )
+
+            try db.execute(sql: "DELETE FROM versions")
+            try db.execute(sql: "INSERT INTO versions (version) VALUES (49)")
+        }
+
+        migrator.registerMigration("v50_drop_agent_actions") { db in
+            if try db.tableExists("agent_actions") {
+                try db.drop(table: "agent_actions")
+            }
+
+            try db.execute(sql: "DELETE FROM versions")
+            try db.execute(sql: "INSERT INTO versions (version) VALUES (50)")
         }
 
         return migrator

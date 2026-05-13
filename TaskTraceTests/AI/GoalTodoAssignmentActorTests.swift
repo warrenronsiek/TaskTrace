@@ -200,7 +200,6 @@ struct GoalTodoAssignmentActorTests {
                     status: .open,
                     statusTs: nil,
                     repeating: false,
-                    repeatTemplateID: nil,
                     targetDate: now,
                     dailyTargetSeconds: nil
                 )
@@ -217,7 +216,6 @@ struct GoalTodoAssignmentActorTests {
                     status: .open,
                     statusTs: nil,
                     repeating: false,
-                    repeatTemplateID: nil,
                     targetDate: now,
                     dailyTargetSeconds: nil
                 )

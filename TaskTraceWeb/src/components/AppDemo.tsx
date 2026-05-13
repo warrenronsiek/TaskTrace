@@ -1164,89 +1164,34 @@ const sr: Record<string, React.CSSProperties> = {
   },
 };
 
-// ─── Agents panel ─────────────────────────────────────────────────────────────
-const AGENT_ACTIONS = [
-  {
-    id: 'agent-1',
-    title: 'Overview Created',
-    messages: [
-      { sender: 'TaskTrace', text: 'overview_created\nActivityActor Pipeline Implementation — built and tested the finalization pipeline covering screenshot OCR, AI summarization, and tag assignment.' },
-      { sender: 'OpenClaw', text: 'The actor isolation fix in OverviewStore is load-bearing — if it regresses, the whole finalization pipeline will deadlock. Add a regression test before moving on.', importance: 'high' as const },
-      { sender: 'TaskTrace', text: 'overview_created\nML Research: MLX Benchmarks — reviewed Apple MLX framework performance on M-series silicon.' },
-      { sender: 'OpenClaw', text: 'The 60 tok/s figure on M3 for the 3B model is competitive. Worth benchmarking the 1B variant too — if it hits 120+ tok/s it could replace the current summarization model and cut latency in half.', importance: null },
-    ],
-  },
-  {
-    id: 'agent-2',
-    title: 'Activity Summarized',
-    messages: [
-      { sender: 'TaskTrace', text: 'activity_summarized\nXcode session: implemented ActivityActor finalization pipeline with screenshot OCR and AI summarization steps.' },
-      { sender: 'OpenClaw', text: 'The async pipeline pattern you used matches the actor isolation model well. One thing to watch: processScreenshots() could block if the OCR queue backs up. Consider adding a timeout.', importance: null },
-      { sender: 'TaskTrace', text: 'activity_summarized\nTerminal session: ran unit tests for OverviewStore and AnalyticsStore. Fixed flaky CalendarStore test.' },
-      { sender: 'OpenClaw', text: 'Flaky tests from actor state propagation are a recurring pattern in this codebase. The async wait fix works, but you should audit the other store tests for the same issue before it bites you again.', importance: 'high' as const },
-    ],
-  },
-];
-
 function AgentsPanel() {
-  const [selectedAgentID, setSelectedAgentID] = useState(AGENT_ACTIONS[0].id);
-  const selectedAgent = AGENT_ACTIONS.find(agent => agent.id === selectedAgentID) ?? AGENT_ACTIONS[0];
-
   return (
     <div style={ag.scroll}>
-      {/* Action tabs */}
-      <div style={ag.chatTabs}>
-        {AGENT_ACTIONS.map(agent => (
-          <button
-            key={agent.id}
-            onClick={() => setSelectedAgentID(agent.id)}
-            style={{
-              ...ag.chatTab,
-              color: agent.id === selectedAgentID ? C.textPrimary : C.textSecondary,
-              background: agent.id === selectedAgentID ? 'rgba(255,255,255,0.12)' : 'transparent',
-            }}
-          >
-            {agent.title}
-          </button>
-        ))}
-        <span style={ag.liveBadge}>Connected</span>
+      <div style={ag.tabs}>
+        <span style={ag.activeTab}>Skills</span>
+        <span style={ag.tab}>MCP</span>
       </div>
 
-      {/* Chat messages */}
-      <div style={ag.chatMessages}>
-        {selectedAgent.messages.map((message, idx) => (
-          <div
-            key={`${selectedAgent.id}-${idx}`}
-            style={{
-              ...ag.messageBubble,
-              alignSelf: message.sender === 'OpenClaw' ? 'flex-start' : 'flex-end',
-              background: message.sender === 'OpenClaw' ? 'rgba(255,255,255,0.06)' : 'rgba(120,199,245,0.12)',
-            }}
-          >
-            <div style={ag.messageHeader}>
-              <span style={ag.messageSender}>{message.sender}</span>
-              {message.importance === 'high' && (
-                <span style={ag.highBadge}>HIGH</span>
-              )}
-            </div>
-            <div style={ag.messageText}>{message.text}</div>
-          </div>
-        ))}
+      <div style={ag.card}>
+        <div style={ag.cardHeader}>
+          <span style={ag.cardTitle}>Generated Skill</span>
+          <span style={ag.badge}>Ready</span>
+        </div>
+        <div style={ag.skillTitle}>Debug flaky Swift actor tests</div>
+        <div style={ag.skillText}>
+          Search recent test failures, inspect actor update streams, and add focused assertions before changing scheduling behavior.
+        </div>
       </div>
 
-      {/* Composer */}
-      <div style={ag.chatComposer}>
-        <input
-          value={`Message ${selectedAgent.title.toLowerCase()}...`}
-          readOnly
-          style={ag.chatInput}
-        />
-        <button style={ag.sendButton}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
+      <div style={ag.card}>
+        <div style={ag.cardHeader}>
+          <span style={ag.cardTitle}>MCP Tool</span>
+          <span style={ag.badge}>Enabled</span>
+        </div>
+        <div style={ag.toolName}>tasktrace_push_message</div>
+        <div style={ag.skillText}>
+          Agents can ask TaskTrace to show a macOS notification through the MCP tool surface.
+        </div>
       </div>
     </div>
   );
@@ -1254,18 +1199,16 @@ function AgentsPanel() {
 
 const ag: Record<string, React.CSSProperties> = {
   scroll: { overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, height: '100%' },
-  chatTabs: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const },
-  chatTab: { border: '1px solid rgba(255,255,255,0.08)', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', fontFamily: 'Inter, sans-serif' },
-  liveBadge: { fontSize: 9, fontWeight: 700, color: '#28c840', background: 'rgba(40,200,64,0.12)', borderRadius: 999, padding: '4px 9px', marginLeft: 'auto' },
-  chatMessages: { display: 'flex', flexDirection: 'column', gap: 10, flex: 1, overflowY: 'auto' },
-  messageBubble: { maxWidth: '85%', borderRadius: 14, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' },
-  messageHeader: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 },
-  messageSender: { fontSize: 10, fontWeight: 700, color: C.textSecondary, textTransform: 'uppercase' as const, letterSpacing: '0.06em' },
-  highBadge: { fontSize: 8.5, fontWeight: 800, color: '#ff5f57', background: 'rgba(255,95,87,0.14)', borderRadius: 999, padding: '2px 7px', letterSpacing: '0.04em' },
-  messageText: { fontSize: 11.5, color: C.textPrimary, lineHeight: 1.55, whiteSpace: 'pre-wrap' as const },
-  chatComposer: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 },
-  chatInput: { flex: 1, background: C.insetBg, border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, color: C.textSecondary, fontSize: 12, padding: '10px 12px', outline: 'none', fontFamily: 'Inter, sans-serif' },
-  sendButton: { width: 36, height: 36, borderRadius: 10, border: `0.8px solid ${C.accentBorder}`, background: C.accentDim, color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 },
+  tabs: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const },
+  activeTab: { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.12)', color: C.textPrimary },
+  tab: { border: '1px solid rgba(255,255,255,0.08)', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 700, color: C.textSecondary },
+  card: { borderRadius: 14, padding: '14px 16px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.06)' },
+  cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  cardTitle: { fontSize: 10, fontWeight: 800, color: C.textSecondary, textTransform: 'uppercase' as const },
+  badge: { fontSize: 9, fontWeight: 700, color: '#28c840', background: 'rgba(40,200,64,0.12)', borderRadius: 999, padding: '4px 9px' },
+  skillTitle: { fontSize: 13, fontWeight: 700, color: C.textPrimary, marginBottom: 6 },
+  skillText: { fontSize: 11.5, color: C.textSecondary, lineHeight: 1.55 },
+  toolName: { fontSize: 12, fontWeight: 700, color: C.accent, fontFamily: 'SFMono-Regular, Menlo, monospace', marginBottom: 6 },
 };
 
 // ─── MCP panel ────────────────────────────────────────────────────────────────
@@ -1510,12 +1453,12 @@ export const OVERLAY: Record<ExplainerSource, { subtitle: string; bullets: strin
     ],
   },
   Agents: {
-    subtitle: 'Automations that react to your work and keep distinct OpenClaw threads alive.',
+    subtitle: 'Reusable skills and MCP tools that give agents TaskTrace context.',
     bullets: [
-      'Each agent action listens for a specific TaskTrace event like overview creation or activity summarization',
-      'Every action keeps its own conversation thread so research and follow-up stay isolated',
-      'The connection panel shows whether the local OpenClaw socket is live and receiving traffic',
-      'Chat history lets you inspect what TaskTrace sent and what OpenClaw replied with for each action',
+      'Generated skills capture repeatable workflows from your recent work',
+      'MCP resources let agents read current activities, todos, screenshots, and graph context',
+      'Agents can add todos and goals without leaving your workflow',
+      'Agents can push concise macOS notifications through TaskTrace when something needs attention',
     ],
   },
   Settings: {

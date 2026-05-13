@@ -66,6 +66,34 @@ struct SettingsStoreTests {
         }
     }
 
+    @Test("the MCP today todos resource defaults to enabled")
+    func mcpTodayTodosResourceDefaultsToEnabled() {
+        withStore { settingsStore in
+            #expect(settingsStore.mcpConfiguration.todayTodosResourceEnabled == true)
+        }
+    }
+
+    @Test("the MCP add todo tool defaults to enabled")
+    func mcpAddTodoToolDefaultsToEnabled() {
+        withStore { settingsStore in
+            #expect(settingsStore.mcpConfiguration.addTodoToolEnabled == true)
+        }
+    }
+
+    @Test("the MCP add goal tool defaults to enabled")
+    func mcpAddGoalToolDefaultsToEnabled() {
+        withStore { settingsStore in
+            #expect(settingsStore.mcpConfiguration.addGoalToolEnabled == true)
+        }
+    }
+
+    @Test("the MCP push message tool defaults to enabled")
+    func mcpPushMessageToolDefaultsToEnabled() {
+        withStore { settingsStore in
+            #expect(settingsStore.mcpConfiguration.pushMessageToolEnabled == true)
+        }
+    }
+
     @Test("microphone capture defaults to enabled")
     func microphoneCaptureDefaultsToEnabled() {
         withStore { settingsStore in
@@ -248,6 +276,52 @@ struct SettingsStoreTests {
             try await database.setSetting(named: "mcp.graphSearchToolEnabled", value: "false")
             await settingsStore.loadPersistedSettings()
             #expect(settingsStore.mcpConfiguration.graphSearchToolEnabled == false)
+        }
+    }
+
+    @Test("loading persisted settings restores the disabled MCP today todos resource state")
+    func loadingPersistedSettingsRestoresTheDisabledMCPTodayTodosResourceState() async throws {
+        try await withStoreWithDatabase { settingsStore, database in
+            try await database.setSetting(named: "mcp.todayTodosResourceEnabled", value: "false")
+            await settingsStore.loadPersistedSettings()
+            #expect(settingsStore.mcpConfiguration.todayTodosResourceEnabled == false)
+        }
+    }
+
+    @Test("loading persisted settings restores the disabled MCP add todo tool state")
+    func loadingPersistedSettingsRestoresTheDisabledMCPAddTodoToolState() async throws {
+        try await withStoreWithDatabase { settingsStore, database in
+            try await database.setSetting(named: "mcp.addTodoToolEnabled", value: "false")
+            await settingsStore.loadPersistedSettings()
+            #expect(settingsStore.mcpConfiguration.addTodoToolEnabled == false)
+        }
+    }
+
+    @Test("loading persisted settings restores the disabled MCP add goal tool state")
+    func loadingPersistedSettingsRestoresTheDisabledMCPAddGoalToolState() async throws {
+        try await withStoreWithDatabase { settingsStore, database in
+            try await database.setSetting(named: "mcp.addGoalToolEnabled", value: "false")
+            await settingsStore.loadPersistedSettings()
+            #expect(settingsStore.mcpConfiguration.addGoalToolEnabled == false)
+        }
+    }
+
+    @Test("loading persisted settings restores the disabled MCP push message tool state")
+    func loadingPersistedSettingsRestoresTheDisabledMCPPushMessageToolState() async throws {
+        try await withStoreWithDatabase { settingsStore, database in
+            try await database.setSetting(named: "mcp.pushMessageToolEnabled", value: "false")
+            await settingsStore.loadPersistedSettings()
+            #expect(settingsStore.mcpConfiguration.pushMessageToolEnabled == false)
+        }
+    }
+
+    @Test("disabling the MCP push message tool persists a disabled tool setting")
+    func disablingTheMCPPushMessageToolPersistsADisabledToolSetting() async throws {
+        try await withStoreWithDatabase { settingsStore, database in
+            settingsStore.setPushMessageToolEnabled(false)
+            try? await Task.sleep(for: .milliseconds(50))
+            let persistedSetting = try await database.getSetting(named: "mcp.pushMessageToolEnabled")
+            #expect(persistedSetting == "false")
         }
     }
 

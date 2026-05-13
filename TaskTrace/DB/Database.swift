@@ -242,35 +242,6 @@ final class TaskTraceDatabase: @unchecked Sendable {
                         ORDER BY create_date ASC, id ASC
                         """
                 ))
-            case .agentAction(.all):
-                return .agentActions(try AgentActionRecord.fetchAll(
-                    db,
-                    sql: """
-                        SELECT
-                            id,
-                            instructions,
-                            event_type,
-                            conversation_id
-                        FROM agent_actions
-                        WHERE event_type = ?
-                        ORDER BY id DESC
-                        """,
-                    arguments: [AgentActionEventType.activitySummarized.rawValue]
-                ))
-            case let .agentAction(.id(id)):
-                return .agentAction(try AgentActionRecord.fetchOne(
-                    db,
-                    sql: """
-                        SELECT
-                            id,
-                            instructions,
-                            event_type,
-                            conversation_id
-                        FROM agent_actions
-                        WHERE id = ? AND event_type = ?
-                        """,
-                    arguments: [id, AgentActionEventType.activitySummarized.rawValue]
-                ))
             case .knowledgeDirectory(.all):
                 return .knowledgeDirectories(try KnowledgeDirectoryRecord.fetchAll(
                     db,
@@ -363,7 +334,7 @@ final class TaskTraceDatabase: @unchecked Sendable {
                         """,
                     arguments: [pair.firstNodeID, pair.secondNodeID]
                 ))
-            case .activity(.record), .screenshot(.record), .overview(.record), .tag(.record), .agentAction(.record), .knowledgeDirectory(.record), .knowledgeFile(.record), .knowledgeNode(.record), .knowledgeEdge(.record), .screenshot(.activityID), .tag(.id):
+            case .activity(.record), .screenshot(.record), .overview(.record), .tag(.record), .knowledgeDirectory(.record), .knowledgeFile(.record), .knowledgeNode(.record), .knowledgeEdge(.record), .screenshot(.activityID), .tag(.id):
                 throw DatabaseRequestError.invalidGet
             }
         }
@@ -415,31 +386,9 @@ final class TaskTraceDatabase: @unchecked Sendable {
                         tag.descriptionIsUserEdited ?? false
                     ]
                 )
-            case let .agentAction(.record(agentAction)):
-                try db.execute(
-                    sql: """
-                        INSERT INTO agent_actions (
-                            id,
-                            instructions,
-                            event_type,
-                            conversation_id
-                        )
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(id) DO UPDATE SET
-                            instructions = excluded.instructions,
-                            event_type = excluded.event_type,
-                            conversation_id = excluded.conversation_id
-                        """,
-                    arguments: [
-                        agentAction.id,
-                        agentAction.instructions,
-                        agentAction.eventType.rawValue,
-                        agentAction.conversationID
-                    ]
-                )
             case .activity(.all), .activity(.id), .activity(.record), .screenshot(.all), .screenshot(.id), .screenshot(.activityID), .screenshot(.record), .overview(.all), .overview(.id), .overview(.record), .tag(.all), .tag(.id):
                 throw DatabaseRequestError.invalidSave
-            case .agentAction(.all), .agentAction(.id), .knowledgeDirectory(.all), .knowledgeDirectory(.id), .knowledgeDirectory(.record), .knowledgeFile(.directoryID), .knowledgeFile(.directoryIDIncludingDeleted), .knowledgeFile(.id), .knowledgeFile(.record), .knowledgeNode(.all), .knowledgeNode(.id), .knowledgeNode(.normalizedName), .knowledgeNode(.record), .knowledgeEdge(.all), .knowledgeEdge(.id), .knowledgeEdge(.pair), .knowledgeEdge(.record):
+            case .knowledgeDirectory(.all), .knowledgeDirectory(.id), .knowledgeDirectory(.record), .knowledgeFile(.directoryID), .knowledgeFile(.directoryIDIncludingDeleted), .knowledgeFile(.id), .knowledgeFile(.record), .knowledgeNode(.all), .knowledgeNode(.id), .knowledgeNode(.normalizedName), .knowledgeNode(.record), .knowledgeEdge(.all), .knowledgeEdge(.id), .knowledgeEdge(.pair), .knowledgeEdge(.record):
                 throw DatabaseRequestError.invalidSave
             }
         }
@@ -452,15 +401,13 @@ final class TaskTraceDatabase: @unchecked Sendable {
                     sql: "UPDATE tags SET delete_date = ? WHERE id = ?",
                     arguments: [Date().formatted(Self.sqlDateStyle), id]
                 )
-            case let .agentAction(.id(id)):
-                try db.execute(sql: "DELETE FROM agent_actions WHERE id = ?", arguments: [id])
             case let .knowledgeFile(.id(id)):
                 try db.execute(sql: "DELETE FROM knowledge_files WHERE id = ?", arguments: [id])
             case let .knowledgeNode(.id(id)):
                 try db.execute(sql: "DELETE FROM knowledge_nodes WHERE id = ?", arguments: [id])
             case let .knowledgeEdge(.id(id)):
                 try db.execute(sql: "DELETE FROM knowledge_edges WHERE id = ?", arguments: [id])
-            case .activity(.all), .activity(.id), .activity(.record), .screenshot(.all), .screenshot(.id), .screenshot(.activityID), .screenshot(.record), .overview(.all), .overview(.id), .overview(.record), .tag(.all), .tag(.record), .agentAction(.all), .agentAction(.record):
+            case .activity(.all), .activity(.id), .activity(.record), .screenshot(.all), .screenshot(.id), .screenshot(.activityID), .screenshot(.record), .overview(.all), .overview(.id), .overview(.record), .tag(.all), .tag(.record):
                 throw DatabaseRequestError.invalidDelete
             case .knowledgeDirectory(.all), .knowledgeDirectory(.id), .knowledgeDirectory(.record), .knowledgeFile(.directoryID), .knowledgeFile(.directoryIDIncludingDeleted), .knowledgeFile(.record), .knowledgeNode(.all), .knowledgeNode(.record), .knowledgeNode(.normalizedName), .knowledgeEdge(.all), .knowledgeEdge(.record), .knowledgeEdge(.pair):
                 throw DatabaseRequestError.invalidDelete
@@ -993,7 +940,6 @@ nonisolated struct GoalTodoRecord: Codable, Equatable, FetchableRecord, Persista
     let status: GoalTodoStatus
     let statusTs: Date?
     let repeating: Bool
-    let repeatTemplateID: Int64?
     let targetDate: Date?
     let dailyTargetSeconds: Int?
     var dailyTargetMode: GoalTodoTargetMode = .minimum
@@ -1009,7 +955,6 @@ nonisolated struct GoalTodoRecord: Codable, Equatable, FetchableRecord, Persista
         case status
         case statusTs = "status_ts"
         case repeating
-        case repeatTemplateID = "repeat_template_id"
         case targetDate = "target_date"
         case dailyTargetSeconds = "daily_target_seconds"
         case dailyTargetMode = "daily_target_mode"
@@ -1034,7 +979,6 @@ nonisolated struct GoalTodoInput: Equatable, Sendable {
     let status: GoalTodoStatus
     let statusTs: Date?
     let repeating: Bool
-    let repeatTemplateID: Int64?
     let targetDate: Date?
     let dailyTargetSeconds: Int?
     var dailyTargetMode: GoalTodoTargetMode = .minimum
@@ -1077,15 +1021,17 @@ nonisolated struct DailyGoalDuration: Codable, Equatable, FetchableRecord, Senda
     }
 }
 
-nonisolated struct DailyCompletedTodoCount: Codable, Equatable, FetchableRecord, Sendable {
+nonisolated struct DailyTodoOutcomeCount: Codable, Equatable, FetchableRecord, Sendable {
     let goalID: Int64?
     let day: Date
     let completedCount: Int
+    let failedCount: Int
 
     enum CodingKeys: String, CodingKey {
         case goalID = "goal_id"
         case day
         case completedCount = "completed_count"
+        case failedCount = "failed_count"
     }
 }
 
@@ -1113,7 +1059,7 @@ nonisolated struct GoalsSnapshot: Equatable, Sendable {
     let goalRollups: [GoalRollup]
     let todoRollups: [GoalTodoRollup]
     let dailyGoalDurations: [DailyGoalDuration]
-    let dailyCompletedTodoCounts: [DailyCompletedTodoCount]
+    let dailyTodoOutcomeCounts: [DailyTodoOutcomeCount]
 }
 
 struct ScreenshotRecord: Codable, Equatable, FetchableRecord, PersistableRecord, TableRecord, Sendable {
@@ -1585,7 +1531,6 @@ enum DatabaseEntity: Equatable {
     case screenshot(Screenshot)
     case overview(Overview)
     case tag(Tag)
-    case agentAction(AgentAction)
     case knowledgeDirectory(KnowledgeDirectory)
     case knowledgeFile(KnowledgeFile)
     case knowledgeNode(KnowledgeNode)
@@ -1614,12 +1559,6 @@ enum DatabaseEntity: Equatable {
         case all
         case id(Int64)
         case record(TagInput)
-    }
-
-    enum AgentAction: Equatable {
-        case all
-        case id(Int64)
-        case record(AgentActionInput)
     }
 
     enum KnowledgeDirectory: Equatable {
@@ -1658,8 +1597,6 @@ enum DatabaseGetResult: Equatable {
     case overviews([OverviewRecord])
     case overview(OverviewRecord?)
     case tags([TagRecord])
-    case agentActions([AgentActionRecord])
-    case agentAction(AgentActionRecord?)
     case knowledgeDirectories([KnowledgeDirectoryRecord])
     case knowledgeDirectory(KnowledgeDirectoryRecord?)
     case knowledgeFiles([KnowledgeFileRecord])
