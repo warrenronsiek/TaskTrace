@@ -8,6 +8,10 @@
 import Foundation
 import GRDB
 
+nonisolated enum GoalTodoStatusValidationError: Error {
+    case failedStatusIsSystemManaged
+}
+
 actor GoalsDatabaseActor {
     private let database: TaskTraceDatabase
     private let calendar: Calendar
@@ -68,6 +72,7 @@ actor GoalsDatabaseActor {
                             ELSE goal_todos.done_ts
                         END AS done_ts,
                         CASE
+                            WHEN goal_todos.status = ? AND goal_todos.daily_target_seconds IS NULL THEN ?
                             WHEN goal_todos.status <> ? AND goal_todos.status_ts IS NOT NULL AND DATE(goal_todos.status_ts) > DATE(?) THEN ?
                             ELSE goal_todos.status
                         END AS status,
@@ -99,6 +104,8 @@ actor GoalsDatabaseActor {
                     """,
                 arguments: [
                     selectedDaySQL,
+                    GoalTodoStatus.failed.rawValue,
+                    GoalTodoStatus.open.rawValue,
                     GoalTodoStatus.open.rawValue,
                     selectedDaySQL,
                     GoalTodoStatus.open.rawValue,
@@ -279,6 +286,7 @@ actor GoalsDatabaseActor {
                             goal_todos.id,
                             goal_todos.goal_id,
                             goal_todos.status,
+                            goal_todos.daily_target_seconds,
                             DATE(COALESCE(goal_todos.done_ts, goal_todos.status_ts)) AS day
                         FROM goal_todos
                         LEFT JOIN goals ON goals.id = goal_todos.goal_id
@@ -293,11 +301,12 @@ actor GoalsDatabaseActor {
                         goal_id,
                         day || ' 12:00:00' AS day,
                         SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed_count,
-                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed_count
+                        SUM(CASE WHEN status = ? AND daily_target_seconds IS NOT NULL THEN 1 ELSE 0 END) AS failed_count
                     FROM outcomes
                     WHERE day IS NOT NULL
                       AND DATE(day) BETWEEN DATE(?) AND DATE(?)
                     GROUP BY goal_id, day
+                    HAVING completed_count > 0 OR failed_count > 0
                     ORDER BY day ASC, goal_id ASC
                     """,
                 arguments: [
@@ -353,6 +362,18 @@ actor GoalsDatabaseActor {
 
     func saveTodo(_ todo: GoalTodoInput) async throws {
         try database.write { db in
+            if todo.status == .failed {
+                let existingStatus = try String.fetchOne(
+                    db,
+                    sql: "SELECT status FROM goal_todos WHERE id = ?",
+                    arguments: [todo.id]
+                ).flatMap(GoalTodoStatus.init(rawValue:))
+
+                guard existingStatus == .failed else {
+                    throw GoalTodoStatusValidationError.failedStatusIsSystemManaged
+                }
+            }
+
             try db.execute(
                 sql: """
                     INSERT INTO goal_todos (
@@ -451,6 +472,10 @@ actor GoalsDatabaseActor {
         status: GoalTodoStatus,
         statusTs: Date
     ) async throws {
+        guard status != .failed else {
+            throw GoalTodoStatusValidationError.failedStatusIsSystemManaged
+        }
+
         try database.write { db in
             try Self.setTodoStatus(
                 id: id,
@@ -768,14 +793,10 @@ actor GoalsDatabaseActor {
                     SELECT goal_todos.id, goal_todos.target_date
                     FROM goal_todos
                     LEFT JOIN goals ON goals.id = goal_todos.goal_id
-                    WHERE status = ?
-                      AND goal_todos.delete_ts IS NULL
+                    WHERE goal_todos.delete_ts IS NULL
                       AND (
                           goal_todos.goal_id IS NULL
-                          OR (
-                              goals.delete_ts IS NULL
-                              AND goals.done_ts IS NULL
-                          )
+                          OR goals.delete_ts IS NULL
                       )
                       AND goal_todos.daily_target_seconds IS NOT NULL
                       AND goal_todos.target_date IS NOT NULL
@@ -783,7 +804,6 @@ actor GoalsDatabaseActor {
                     ORDER BY goal_todos.target_date ASC, goal_todos.id ASC
                     """,
                 arguments: [
-                    GoalTodoStatus.open.rawValue,
                     todaySQL
                 ]
             )
@@ -794,7 +814,6 @@ actor GoalsDatabaseActor {
                 try Self.resolveHistoricalTodoTarget(
                     id: todoID,
                     targetDaySQL: targetDate,
-                    now: now,
                     db: db
                 )
             }
@@ -876,6 +895,20 @@ actor GoalsDatabaseActor {
         now: Date,
         db: Database
     ) throws {
+        try setTodoStatus(
+            id: id,
+            status: status,
+            timestampSQL: now.formatted(TaskTraceDatabase.sqlTimestampStyle),
+            db: db
+        )
+    }
+
+    private nonisolated static func setTodoStatus(
+        id: Int64,
+        status: GoalTodoStatus,
+        timestampSQL: String,
+        db: Database
+    ) throws {
         try db.execute(
             sql: """
                 UPDATE goal_todos
@@ -887,8 +920,8 @@ actor GoalsDatabaseActor {
                 """,
             arguments: [
                 status.rawValue,
-                now.formatted(TaskTraceDatabase.sqlTimestampStyle),
-                status == .done ? now.formatted(TaskTraceDatabase.sqlTimestampStyle) : nil,
+                timestampSQL,
+                status == .done ? timestampSQL : nil,
                 id
             ]
         )
@@ -934,7 +967,6 @@ actor GoalsDatabaseActor {
     private nonisolated static func resolveHistoricalTodoTarget(
         id: Int64,
         targetDaySQL: String,
-        now: Date,
         db: Database
     ) throws {
         guard let target = try Row.fetchOne(
@@ -943,11 +975,10 @@ actor GoalsDatabaseActor {
                 SELECT daily_target_seconds, daily_target_mode
                 FROM goal_todos
                 WHERE id = ?
-                  AND status = ?
                   AND delete_ts IS NULL
                   AND daily_target_seconds IS NOT NULL
                 """,
-            arguments: [id, GoalTodoStatus.open.rawValue]
+            arguments: [id]
         ),
               let targetSeconds = target["daily_target_seconds"] as Int? else {
             return
@@ -965,7 +996,7 @@ actor GoalsDatabaseActor {
         try setTodoStatus(
             id: id,
             status: status,
-            now: now,
+            timestampSQL: "\(targetDaySQL) 12:00:00",
             db: db
         )
     }

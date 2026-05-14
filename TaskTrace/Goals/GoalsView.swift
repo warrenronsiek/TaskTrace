@@ -454,13 +454,15 @@ private struct GoalsWeeklyChart: View {
             GeometryReader { proxy in
                 let chartHeight = max(proxy.size.height - 24, 1)
                 let chartWidth = max(proxy.size.width - 84, 1)
+                let geometry = GoalsTimelineGeometry(height: chartHeight, maxDuration: maxDuration)
 
                 HStack(alignment: .top, spacing: 8) {
                     yAxis(
                         top: formatGoalDuration(maxDuration),
-                        bottom: "0m",
+                        zero: "0m",
                         width: 44,
-                        height: chartHeight
+                        height: chartHeight,
+                        zeroY: geometry.zeroY
                     )
 
                     VStack(spacing: 6) {
@@ -476,9 +478,11 @@ private struct GoalsWeeklyChart: View {
 
                     yAxis(
                         top: "\(maxOutcomeCount)",
+                        zero: "0",
                         bottom: "-\(maxOutcomeCount)",
                         width: 24,
-                        height: chartHeight
+                        height: chartHeight,
+                        zeroY: geometry.zeroY
                     )
                 }
             }
@@ -512,7 +516,9 @@ private struct GoalsWeeklyChart: View {
         width: CGFloat,
         height: CGFloat
     ) -> some View {
-        ZStack(alignment: .topLeading) {
+        let geometry = GoalsTimelineGeometry(height: height, maxDuration: maxDuration)
+
+        return ZStack(alignment: .topLeading) {
             ForEach([0.25, 0.5, 0.75, 1.0], id: \.self) { fraction in
                 Rectangle()
                     .fill(AppColors.timelineGrid)
@@ -520,12 +526,10 @@ private struct GoalsWeeklyChart: View {
                     .offset(y: height - height * fraction)
             }
 
-            let outcomeBaselineY = height * 0.68
-
             Rectangle()
                 .fill(AppColors.textSecondary.opacity(0.26))
                 .frame(height: 1)
-                .offset(y: outcomeBaselineY)
+                .offset(y: geometry.zeroY)
 
             ForEach(Array(days.enumerated()), id: \.offset) { pair in
                 let barWidth = max(width / CGFloat(max(days.count, 1)) * 0.34, 8)
@@ -537,12 +541,12 @@ private struct GoalsWeeklyChart: View {
                                 .fill(segment.color.opacity(0.58))
                                 .frame(
                                     width: barWidth,
-                                    height: CGFloat(segment.count) / CGFloat(maxOutcomeCount) * outcomeBaselineY
+                                    height: geometry.completedBarHeight(count: segment.count, maxOutcomeCount: maxOutcomeCount)
                                 )
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    .frame(width: barWidth, height: outcomeBaselineY, alignment: .bottom)
+                    .frame(width: barWidth, height: geometry.zeroY, alignment: .bottom)
                     .offset(y: 0)
 
                     VStack(spacing: 0) {
@@ -551,13 +555,13 @@ private struct GoalsWeeklyChart: View {
                                 .fill(segment.color.opacity(0.72))
                                 .frame(
                                     width: barWidth,
-                                    height: CGFloat(segment.count) / CGFloat(maxOutcomeCount) * (height - outcomeBaselineY)
+                                    height: geometry.failedBarHeight(count: segment.count, maxOutcomeCount: maxOutcomeCount)
                                 )
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    .frame(width: barWidth, height: height - outcomeBaselineY, alignment: .top)
-                    .offset(y: outcomeBaselineY)
+                    .frame(width: barWidth, height: height - geometry.zeroY, alignment: .top)
+                    .offset(y: geometry.zeroY)
                 }
                 .frame(width: barWidth, height: height, alignment: .top)
                 .position(
@@ -680,14 +684,24 @@ private struct GoalsWeeklyChart: View {
 
     private func yAxis(
         top: String,
-        bottom: String,
+        zero: String,
+        bottom: String? = nil,
         width: CGFloat,
-        height: CGFloat
+        height: CGFloat,
+        zeroY: CGFloat
     ) -> some View {
-        VStack {
+        ZStack(alignment: .topTrailing) {
             Text(top)
-            Spacer()
-            Text(bottom)
+                .frame(width: width, height: height, alignment: .topTrailing)
+
+            Text(zero)
+                .frame(width: width, height: 12, alignment: .trailing)
+                .offset(y: min(max(zeroY - 6, 0), max(height - 12, 0)))
+
+            if let bottom {
+                Text(bottom)
+                    .frame(width: width, height: height, alignment: .bottomTrailing)
+            }
         }
         .font(Styles.Fonts.caption2)
         .foregroundStyle(AppColors.textSecondary)
@@ -730,7 +744,7 @@ private struct GoalsWeeklyChart: View {
         duration: Int,
         height: CGFloat
     ) -> CGFloat {
-        height - CGFloat(duration) / CGFloat(maxDuration) * height
+        GoalsTimelineGeometry(height: height, maxDuration: maxDuration).timeY(duration: duration)
     }
 
 }

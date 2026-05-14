@@ -9,7 +9,7 @@ struct GoalsDatabaseActorTests {
     func migrationSetsTheGoalSchemaVersion() async throws {
         try await withGoalsDatabase { database, _ in
             let version = try database.getVersion()
-            #expect(version == 49)
+            #expect(version == 50)
         }
     }
 
@@ -67,16 +67,18 @@ struct GoalsDatabaseActorTests {
         }
     }
 
-    @Test("failed standalone todo counts without a goal id")
-    func failedStandaloneTodoCountsWithoutAGoalID() async throws {
+    @Test("target failure counts without a goal id")
+    func targetFailureCountsWithoutAGoalID() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: now, status: .failed, statusTs: now, repeating: false, targetDate: now, dailyTargetSeconds: nil))
+            let targetDate = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Standalone", createTs: targetDate, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
 
             let snapshot = try await goalsDatabaseActor.loadSnapshot(
-                visibleStart: now.addingTimeInterval(-86_400),
-                visibleEnd: now.addingTimeInterval(86_400),
-                selectedDay: now
+                visibleStart: targetDate,
+                visibleEnd: now,
+                selectedDay: targetDate
             )
 
             #expect(snapshot.dailyTodoOutcomeCounts.first?.failedCount == 1)
@@ -226,7 +228,7 @@ struct GoalsDatabaseActorTests {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let yesterday = now.addingTimeInterval(-86_400)
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Repeat failed", createTs: yesterday, status: .failed, statusTs: yesterday, repeating: true, targetDate: yesterday, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Repeat failed", createTs: yesterday, status: .open, statusTs: nil, repeating: true, targetDate: yesterday, dailyTargetSeconds: 1_800))
             try await goalsDatabaseActor.runDailyMaintenance(now: now)
 
             let status = try database.read { db in
@@ -431,6 +433,100 @@ struct GoalsDatabaseActorTests {
             }
 
             #expect(status == GoalTodoStatus.failed.rawValue)
+        }
+    }
+
+    @Test("daily maintenance records target failure on the target date")
+    func dailyMaintenanceRecordsTargetFailureOnTheTargetDate() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let targetDate = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: targetDate, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: targetDate, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(
+                visibleStart: targetDate,
+                visibleEnd: now,
+                selectedDay: targetDate
+            )
+
+            #expect(snapshot.dailyTodoOutcomeCounts.contains { Calendar(identifier: .gregorian).isDate($0.day, inSameDayAs: targetDate) && $0.failedCount == 1 })
+        }
+    }
+
+    @Test("daily maintenance does not record target failure on the job date")
+    func dailyMaintenanceDoesNotRecordTargetFailureOnTheJobDate() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let targetDate = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: targetDate, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: targetDate, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let snapshot = try await goalsDatabaseActor.loadSnapshot(
+                visibleStart: targetDate,
+                visibleEnd: now,
+                selectedDay: now
+            )
+
+            #expect(snapshot.dailyTodoOutcomeCounts.contains { Calendar(identifier: .gregorian).isDate($0.day, inSameDayAs: now) && $0.failedCount > 0 } == false)
+        }
+    }
+
+    @Test("daily maintenance recomputes completed historical target below quota")
+    func dailyMaintenanceRecomputesCompletedHistoricalTargetBelowQuota() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let targetDate = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: targetDate, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Todo", createTs: targetDate, status: .done, statusTs: targetDate, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let status = try database.read { db in
+                try String.fetchOne(db, sql: "SELECT status FROM goal_todos WHERE id = 2")
+            }
+
+            #expect(status == GoalTodoStatus.failed.rawValue)
+        }
+    }
+
+    @Test("daily maintenance does not fail non target todo")
+    func dailyMaintenanceDoesNotFailNonTargetTodo() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let targetDate = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Todo", createTs: targetDate, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let status = try database.read { db in
+                try String.fetchOne(db, sql: "SELECT status FROM goal_todos WHERE id = 2")
+            }
+
+            #expect(status == GoalTodoStatus.open.rawValue)
+        }
+    }
+
+    @Test("public todo status mutation cannot set failed")
+    func publicTodoStatusMutationCannotSetFailed() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Todo", createTs: now, status: .open, statusTs: nil, repeating: false, targetDate: now, dailyTargetSeconds: nil))
+
+            await #expect(throws: GoalTodoStatusValidationError.self) {
+                try await goalsDatabaseActor.setTodoStatus(id: 2, status: .failed, statusTs: now)
+            }
+        }
+    }
+
+    @Test("public todo save cannot create failed")
+    func publicTodoSaveCannotCreateFailed() async throws {
+        try await withGoalsDatabase { _, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+
+            await #expect(throws: GoalTodoStatusValidationError.self) {
+                try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Todo", createTs: now, status: .failed, statusTs: now, repeating: false, targetDate: now, dailyTargetSeconds: nil))
+            }
         }
     }
 
@@ -786,10 +882,11 @@ struct GoalsDatabaseActorTests {
     func activityStartCandidatesExcludeFailedTodoBeforeActivityStart() async throws {
         try await withGoalsDatabase { _, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
-            let activityStart = now.addingTimeInterval(1_200)
-            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: now, doneTs: nil))
-            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Failed", createTs: now, status: .failed, statusTs: now.addingTimeInterval(600), repeating: false, targetDate: activityStart, dailyTargetSeconds: nil))
-            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: activityStart)
+            let targetDate = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveGoal(GoalInput(id: 1, name: "Goal", description: nil, createTs: targetDate, doneTs: nil))
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: 1, name: "Failed", createTs: targetDate, status: .open, statusTs: nil, repeating: false, targetDate: targetDate, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+            let candidates = try await goalsDatabaseActor.loadOpenTodoCandidates(forActivityStart: now)
 
             #expect(candidates.isEmpty)
         }
