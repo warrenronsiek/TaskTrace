@@ -1,0 +1,5 @@
+.idea/
+.release-version.env
+dist/
+node_modules/
+*.tgz

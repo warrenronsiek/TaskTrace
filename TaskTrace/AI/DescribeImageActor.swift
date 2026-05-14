@@ -34,7 +34,10 @@ actor DescribeImageActor: Receiver, ActivityImageDescribing {
         self.actorSystem = actorSystem
         self.fallbackImageDescriber = imageDescriber
         self.imageDescriber = imageDescriber
-        self.screenshotTextRecognizer = ReadScreenshotTextActor(actorSystem: actorSystem)
+        self.screenshotTextRecognizer = ReadScreenshotTextActor(
+            actorSystem: actorSystem,
+            visibleTextReader: EmptyActivityVisibleTextReader()
+        )
     }
 
     func describeImage(_ image: Data) async -> String {

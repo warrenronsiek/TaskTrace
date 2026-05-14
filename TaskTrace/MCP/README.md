@@ -45,7 +45,8 @@ MCP refresh is event-driven:
 Keep this path database-backed. Do not add long-lived in-memory copies of large
 activity, screenshot, or knowledge payloads to the MCP process.
 
-## External Plugin Repo
+## In-Repo Plugin
 
-The app points users to `warrenronsiek/TaskTraceMCPPlugin` for OpenClaw,
-Claude, Cursor-compatible bundle metadata, and release packaging.
+The app points users to `TaskTrace/TaskTraceMCPPlugin` for OpenClaw, Claude,
+Codex, Cursor-compatible bundle metadata, and release packaging. The plugin
+uses the same semantic-release version as the rest of TaskTrace.

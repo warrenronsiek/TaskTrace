@@ -1,0 +1,44 @@
+{
+  "name": "tasktrace-mcp",
+  "version": "0.0.0-development",
+  "description": "Gives Codex access to your own work history. Ask 'what did I do today', 'find when I worked on billing', or 'what do I know about OAuth' — Codex reads your TaskTrace activity and knowledge graph locally through an MCP server.",
+  "author": {
+    "name": "TaskTrace",
+    "email": "support@tasktrace.com",
+    "url": "https://tasktrace.com/"
+  },
+  "homepage": "https://tasktrace.com/docs",
+  "repository": "https://github.com/warrenronsiek/TaskTrace/tree/master/TaskTraceMCPPlugin",
+  "license": "MIT",
+  "keywords": [
+    "tasktrace",
+    "mcp",
+    "activity",
+    "productivity",
+    "screen-recording",
+    "knowledge-graph",
+    "context"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "TaskTrace",
+    "shortDescription": "Your own work history as context for Codex",
+    "longDescription": "Connects the local TaskTrace desktop app to Codex as an MCP server. Codex can ask questions like 'what did I do today', 'find when I worked on billing', 'what am I typing right now', or 'what do I know about OAuth refresh flows', and get answers from your recent activity, screenshots, transcripts, and knowledge graph. All data stays on your machine; you choose which feeds to share from TaskTrace's Preferences > MCP pane.",
+    "developerName": "TaskTrace",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://tasktrace.com/docs",
+    "privacyPolicyURL": "https://tasktrace.com/privacy",
+    "termsOfServiceURL": "https://tasktrace.com/terms",
+    "defaultPrompt": [
+      "Use TaskTrace to answer questions about my own work history, in-progress tasks, and personal knowledge graph. Run tasktrace_search for historical questions and read the active-day resources when I ask about today."
+    ],
+    "composerIcon": "./assets/favicon-192x192.png",
+    "logo": "./assets/tasktrace-logo-black-bg.svg",
+    "screenshots": [],
+    "brandColor": "#111111"
+  }
+}

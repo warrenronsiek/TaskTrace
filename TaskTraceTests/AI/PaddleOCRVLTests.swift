@@ -8,9 +8,57 @@ struct OCRTests {
 
     @Test("ReadScreenshotTextActor returns empty for invalid image bytes")
     func readScreenshotTextActorReturnsEmptyForInvalidBytes() async {
-        let actor = ReadScreenshotTextActor(actorSystem: ActorSystem())
+        let actor = ReadScreenshotTextActor(
+            actorSystem: ActorSystem(),
+            visibleTextReader: EmptyActivityVisibleTextReader()
+        )
         let text = await actor.ocrImage(Data("not-an-image".utf8))
         #expect(text == "")
+    }
+
+    @Test("ReadScreenshotTextActor uses accessibility text before OCR")
+    func readScreenshotTextActorUsesAccessibilityTextBeforeOCR() async {
+        let recognizer = RecordingScreenshotTextRecognizer(response: "ocr fallback")
+        let actor = ReadScreenshotTextActor(
+            actorSystem: ActorSystem(),
+            screenshotTextRecognizer: recognizer,
+            visibleTextReader: StubVisibleTextReader(text: "  Accessibility text  ")
+        )
+
+        let text = await actor.ocrImage(Data("image".utf8))
+
+        #expect(text == "Accessibility text")
+        #expect(await recognizer.callCount == 0)
+    }
+
+    @Test("ReadScreenshotTextActor falls back to OCR when accessibility text is empty")
+    func readScreenshotTextActorFallsBackToOCRWhenAccessibilityTextIsEmpty() async {
+        let recognizer = RecordingScreenshotTextRecognizer(response: "ocr fallback")
+        let actor = ReadScreenshotTextActor(
+            actorSystem: ActorSystem(),
+            screenshotTextRecognizer: recognizer,
+            visibleTextReader: StubVisibleTextReader(text: " \n\t ")
+        )
+
+        let text = await actor.ocrImage(Data("image".utf8))
+
+        #expect(text == "ocr fallback")
+        #expect(await recognizer.callCount == 1)
+    }
+
+    @Test("ReadScreenshotTextActor normalizes accessibility text")
+    func readScreenshotTextActorNormalizesAccessibilityText() async {
+        let recognizer = RecordingScreenshotTextRecognizer(response: "ocr fallback")
+        let actor = ReadScreenshotTextActor(
+            actorSystem: ActorSystem(),
+            screenshotTextRecognizer: recognizer,
+            visibleTextReader: StubVisibleTextReader(text: " Title \n\n title\nButton\n  Button ")
+        )
+
+        let text = await actor.ocrImage(Data("image".utf8))
+
+        #expect(text == "Title\nButton")
+        #expect(await recognizer.callCount == 0)
     }
 }
 
@@ -63,5 +111,27 @@ struct OCRIntegrationTests {
         }
 
         #expect(!lines.isEmpty, "Vision should produce at least one line of text from the synthetic image")
+    }
+}
+
+private struct StubVisibleTextReader: ActivityVisibleTextReading {
+    let text: String
+
+    func visibleActiveText() async -> String {
+        text
+    }
+}
+
+private actor RecordingScreenshotTextRecognizer: ActivityScreenshotTextRecognizing {
+    private(set) var callCount = 0
+    private let response: String
+
+    init(response: String) {
+        self.response = response
+    }
+
+    func ocrImage(_ image: Data) async -> String {
+        callCount += 1
+        return response
     }
 }

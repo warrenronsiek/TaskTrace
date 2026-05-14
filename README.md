@@ -13,6 +13,7 @@ graphs, and agent-readable context.
 - `TaskTraceUITests/`: UI test target.
 - `TaskTraceWeb/`: public website and download surface. See `TaskTraceWeb/README.md`.
 - `TaskTraceWebView/`: JavaScript renderers embedded by the app.
+- `TaskTraceMCPPlugin/`: Claude Code, Codex, and OpenClaw plugin bundle for TaskTrace MCP.
 - `BrowserPlugin/`: browser capture extension and native messaging support.
 - `Infra/`: Terraform for public web and release artifact hosting. See `Infra/README.md`.
 - `.circleci/`: CI, release, signing, notarization, and deploy workflow. See `.circleci/README.md`.

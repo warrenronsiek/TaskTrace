@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useUseCasePath } from '../useCase';
 
-const GITHUB_REPO = 'https://github.com/warrenronsiek/TaskTraceMCPPlugin';
+const GITHUB_REPO = 'https://github.com/warrenronsiek/TaskTrace/tree/master/TaskTraceMCPPlugin';
 
 const sections = [
   { id: 'overview', label: 'Overview' },
@@ -247,39 +247,47 @@ export default function DocsPage() {
 
             <h3 style={styles.h3}>Claude Code</h3>
             <p style={styles.body}>
-              Install via the plugin marketplace — this automatically registers the MCP server:
+              Clone the repo, then add the in-repo plugin directory as a local Claude Code marketplace:
             </p>
-            <CodeBlock code={`/plugin marketplace add warrenronsiek/TaskTraceMCPPlugin
-/plugin install tasktrace-mcp@tasktrace-mcp`} />
+            <CodeBlock code={`git clone https://github.com/warrenronsiek/TaskTrace.git
+cd TaskTrace/TaskTraceMCPPlugin`} />
             <p style={styles.body}>
-              Restart Claude Code, then run <code style={styles.codeInline}>/mcp</code>. You should
+              Inside Claude Code, install the plugin from that local marketplace:
+            </p>
+            <CodeBlock code={`/plugin marketplace add .
+/plugin install tasktrace-mcp@tasktrace-mcp
+/reload-plugins
+/mcp`} />
+            <p style={styles.body}>
+              You should
               see <code style={styles.codeInline}>tasktrace</code> listed. If setup fails, run{' '}
               <code style={styles.codeInline}>/tasktrace-mcp:setup</code> for a local install check.
             </p>
             <p style={styles.body}>
               Or register the MCP server directly without the plugin:
             </p>
-            <CodeBlock code={`claude mcp add --transport stdio --scope project tasktrace -- \\
+            <CodeBlock code={`claude mcp add --transport stdio --scope user tasktrace -- \\
   /Applications/TaskTrace.app/Contents/MacOS/TaskTrace --mcp-stdio`} />
 
             <h3 style={styles.h3}>Codex</h3>
             <p style={styles.body}>
-              Stage and install from a local checkout of the plugin repo, then restart Codex and
+              Stage and install from the plugin directory in a TaskTrace checkout, then restart Codex and
               install <code style={styles.codeInline}>tasktrace-mcp</code> from the local marketplace:
             </p>
-            <CodeBlock code={`git clone https://github.com/warrenronsiek/TaskTraceMCPPlugin.git
-cd TaskTraceMCPPlugin
+            <CodeBlock code={`git clone https://github.com/warrenronsiek/TaskTrace.git
+cd TaskTrace/TaskTraceMCPPlugin
 npm install
 npm run install:codex-local`} />
 
             <h3 style={styles.h3}>OpenClaw</h3>
             <p style={styles.body}>
-              Clone the plugin repo locally, install the native TaskTrace MCP plugin, register
+              Clone TaskTrace locally, install the native TaskTrace MCP plugin from the in-repo
+              plugin directory, register
               the TaskTrace stdio MCP server, clear stale upgrade-era allowlists, restart
               the gateway, then inspect the MCP registration:
             </p>
-            <CodeBlock code={`git clone https://github.com/warrenronsiek/TaskTraceMCPPlugin.git
-cd TaskTraceMCPPlugin
+            <CodeBlock code={`git clone https://github.com/warrenronsiek/TaskTrace.git
+cd TaskTrace/TaskTraceMCPPlugin
 openclaw plugins install .
 openclaw mcp set tasktrace '{"command":"/Applications/TaskTrace.app/Contents/MacOS/TaskTrace","args":["--mcp-stdio"]}'
 openclaw config unset tools.allow
@@ -308,7 +316,7 @@ openclaw plugins inspect tasktrace-mcp`} />
               Save this as <code style={styles.codeInline}>.mcp.json</code> in your project root, or
               copy it from the{' '}
               <a href={GITHUB_REPO} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                plugin repo
+                in-repo plugin directory
               </a>.
             </p>
           </section>

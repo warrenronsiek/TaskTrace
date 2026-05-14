@@ -1,0 +1,31 @@
+{
+  "name": "tasktrace-mcp",
+  "version": "0.0.0-development",
+  "description": "Local MCP bundle for TaskTrace. Lets Claude Code, Codex, and OpenClaw agents use your own work history and knowledge graph as context.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  },
+  "files": [
+    ".codex-plugin",
+    "assets",
+    ".claude-plugin",
+    ".cursor-plugin",
+    ".mcp.json",
+    "index.js",
+    "openclaw.plugin.json",
+    "README.md",
+    "scripts",
+    "skills",
+    "src"
+  ],
+  "scripts": {
+    "install:codex-local": "node ./scripts/install-codex-plugin.mjs",
+    "pack": "bash scripts/clawhub-pack.sh \"$(node -p 'require(\"./package.json\").version')\"",
+    "test": "node --test"
+  }
+}

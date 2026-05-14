@@ -1,0 +1,20 @@
+{
+  "name": "tasktrace-mcp",
+  "description": "Gives Claude access to your own work history. Ask things like 'what did I do today', 'find when I worked on billing', or 'what do I know about OAuth' — Claude reads your TaskTrace activity and knowledge graph locally through an MCP server.",
+  "version": "0.0.0-development",
+  "author": {
+    "name": "TaskTrace",
+    "email": "support@tasktrace.com"
+  },
+  "homepage": "https://tasktrace.com/docs",
+  "repository": "https://github.com/warrenronsiek/TaskTrace/tree/master/TaskTraceMCPPlugin",
+  "license": "MIT",
+  "mcpServers": {
+    "tasktrace": {
+      "command": "/Applications/TaskTrace.app/Contents/MacOS/TaskTrace",
+      "args": [
+        "--mcp-stdio"
+      ]
+    }
+  }
+}

@@ -46,7 +46,13 @@ struct ActivityWorkerDependencies: Sendable {
                 )
             },
             makeDescribeImageActor: { DescribeImageActor(actorSystem: $0, imageDescriber: activityAI) },
-            makeReadScreenshotTextActor: { ReadScreenshotTextActor(actorSystem: $0, screenshotTextRecognizer: activityAI) },
+            makeReadScreenshotTextActor: {
+                ReadScreenshotTextActor(
+                    actorSystem: $0,
+                    screenshotTextRecognizer: activityAI,
+                    visibleTextReader: EmptyActivityVisibleTextReader()
+                )
+            },
             makeSummarizeScreenshotActor: { SummarizeScreenshotActor(actorSystem: $0, screenshotSummarizer: activityAI) },
             makeSummarizeActivityActor: { SummarizeActivityActor(actorSystem: $0, summarizer: activityAI) },
             makeActivityTagOntologyActor: { ActivityTagOntologyActor(actorSystem: $0, activityDatabaseActor: $1) },

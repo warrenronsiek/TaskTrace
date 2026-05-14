@@ -1,0 +1,62 @@
+version: 2.1
+
+jobs:
+  publish_plugin:
+    docker:
+      - image: cimg/node:20.18
+    resource_class: medium
+    steps:
+      - checkout
+      - run:
+          name: Prepare git history for semantic-release
+          command: |
+            if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+              git fetch --unshallow origin
+            fi
+            git fetch --tags origin "$CIRCLE_BRANCH"
+            git checkout -B "$CIRCLE_BRANCH" "origin/$CIRCLE_BRANCH"
+      - run:
+          name: Install system tools
+          command: |
+            sudo apt-get update -qq && sudo apt-get install -y zip
+      - run:
+          name: Install release tooling
+          command: |
+            npm install
+      - run:
+          name: Run semantic-release
+          no_output_timeout: 20m
+          command: |
+            rm -f .release-version.env
+            test -n "$GITHUB_DEPLOY_KEY_B64"
+            mkdir -p ~/.ssh
+            printf '%s' "$GITHUB_DEPLOY_KEY_B64" | base64 --decode > ~/.ssh/tasktrace_release_key
+            chmod 600 ~/.ssh/tasktrace_release_key
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            git config user.name "TaskTrace MCP Plugin Release Bot"
+            git config user.email "releases@tasktrace.com"
+            git remote set-url origin "git@github.com:${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}.git"
+            git config core.sshCommand "ssh -i ~/.ssh/tasktrace_release_key -o IdentitiesOnly=yes"
+            npx semantic-release
+      - run:
+          name: End gracefully if semantic-release did not create a release
+          command: |
+            if [ -f .release-version.env ]; then
+              cat .release-version.env
+              echo "Is a release!"
+            else
+              echo "Not a release"
+              circleci-agent step halt
+            fi
+      - store_artifacts:
+          path: dist
+
+workflows:
+  release:
+    jobs:
+      - publish_plugin:
+          filters:
+            branches:
+              only:
+                - master
+                - dev

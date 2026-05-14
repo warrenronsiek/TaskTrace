@@ -832,7 +832,8 @@ private func makeSlowScreenshotWorkerDependencies(
         makeReadScreenshotTextActor: { actorSystem in
             ReadScreenshotTextActor(
                 actorSystem: actorSystem,
-                screenshotTextRecognizer: screenshotTextRecognizer
+                screenshotTextRecognizer: screenshotTextRecognizer,
+                visibleTextReader: EmptyActivityVisibleTextReader()
             )
         },
         makeSummarizeScreenshotActor: { actorSystem in

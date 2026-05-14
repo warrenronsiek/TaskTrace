@@ -1,0 +1,21 @@
+{
+  "name": "tasktrace-mcp",
+  "owner": {
+    "name": "TaskTrace",
+    "email": "support@tasktrace.com"
+  },
+  "metadata": {
+    "description": "TaskTrace for Claude Code: local MCP server plus skills that teach Claude how to use your own work history and knowledge graph as context."
+  },
+  "plugins": [
+    {
+      "name": "tasktrace-mcp",
+      "source": "./",
+      "description": "Gives Claude access to your own work history. Ask 'what did I do today', 'find when I worked on X', or 'what do I know about Y' — Claude reads your TaskTrace activity feeds, search, and knowledge graph locally over MCP.",
+      "homepage": "https://tasktrace.com/docs",
+      "repository": "https://github.com/warrenronsiek/TaskTrace/tree/master/TaskTraceMCPPlugin",
+      "license": "MIT",
+      "keywords": ["tasktrace", "mcp", "activity", "productivity", "screen-recording", "knowledge-graph", "context"]
+    }
+  ]
+}

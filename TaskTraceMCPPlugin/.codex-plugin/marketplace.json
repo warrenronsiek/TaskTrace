@@ -1,0 +1,20 @@
+{
+  "name": "tasktrace-marketplace",
+  "interface": {
+    "displayName": "TaskTrace Plugins"
+  },
+  "plugins": [
+    {
+      "name": "tasktrace-mcp",
+      "source": {
+        "source": "local",
+        "path": "./.codex/plugins/tasktrace-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

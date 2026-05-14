@@ -1,0 +1,24 @@
+{
+  "id": "tasktrace-mcp",
+  "name": "TaskTrace MCP",
+  "description": "Gives OpenClaw agents access to your own work history and knowledge graph. Bundles resource-backed OpenClaw tools that read TaskTrace MCP resources directly.",
+  "version": "0.0.0-development",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "tasktrace_list_resources",
+      "tasktrace_list_resource_templates",
+      "tasktrace_get_active_day_overviews",
+      "tasktrace_get_high_level_activities",
+      "tasktrace_get_detailed_activities",
+      "tasktrace_read_resource"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

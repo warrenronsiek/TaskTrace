@@ -38,6 +38,44 @@ const releaseMetadata = [
 
 fs.writeFileSync(releaseMetadataPath, releaseMetadata, 'utf8');
 
+const updateJsonVersion = (relativePath) => {
+  const filePath = path.join(process.cwd(), relativePath);
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  parsed.version = releaseVersion;
+  fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+};
+
+const updatePackageLockVersion = (relativePath) => {
+  const filePath = path.join(process.cwd(), relativePath);
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  parsed.version = releaseVersion;
+
+  if (parsed.packages && parsed.packages['']) {
+    parsed.packages[''].version = releaseVersion;
+  }
+
+  fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+};
+
+[
+  'TaskTraceMCPPlugin/package.json',
+  'TaskTraceMCPPlugin/openclaw.plugin.json',
+  'TaskTraceMCPPlugin/.claude-plugin/plugin.json',
+  'TaskTraceMCPPlugin/.codex-plugin/plugin.json',
+  'TaskTraceMCPPlugin/.cursor-plugin/plugin.json'
+].forEach(updateJsonVersion);
+
+updatePackageLockVersion('TaskTraceMCPPlugin/package-lock.json');
+
 console.log(`Prepared release metadata at ${releaseMetadataPath}`);
 console.log(`MARKETING_VERSION=${marketingVersion}`);
 console.log(`CURRENT_PROJECT_VERSION=${currentProjectVersion}`);
+console.log(`TaskTraceMCPPlugin version=${releaseVersion}`);

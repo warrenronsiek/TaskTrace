@@ -9,8 +9,14 @@ struct MCPView: View {
         let selectedConfigurationText = switch selectedConfiguration {
         case .claudeMarketplace:
             """
-            /plugin marketplace add warrenronsiek/TaskTraceMCPPlugin
+            git clone https://github.com/warrenronsiek/TaskTrace.git
+            cd TaskTrace/TaskTraceMCPPlugin
+
+            # Then run inside Claude Code:
+            /plugin marketplace add .
             /plugin install tasktrace-mcp@tasktrace-mcp
+            /reload-plugins
+            /mcp
             """
         case .claudeCodeMCP:
             "claude mcp add --transport stdio --scope user tasktrace -- \(commandPath) \(Vars.mcpStdioLaunchArgument)"
@@ -18,8 +24,8 @@ struct MCPView: View {
             "codex mcp add tasktrace \(commandPath) \(Vars.mcpStdioLaunchArgument)"
         case .openClaw:
             """
-            git clone https://github.com/warrenronsiek/TaskTraceMCPPlugin.git
-            cd TaskTraceMCPPlugin
+            git clone https://github.com/warrenronsiek/TaskTrace.git
+            cd TaskTrace/TaskTraceMCPPlugin
             openclaw plugins install .
             openclaw mcp set tasktrace '{"command":"\(commandPath)","args":["\(Vars.mcpStdioLaunchArgument)"]}'
             openclaw config set tools.profile '"full"' --strict-json

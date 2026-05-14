@@ -1,0 +1,5 @@
+{
+  "name": "tasktrace-mcp",
+  "version": "0.0.0-development",
+  "description": "Gives Cursor-compatible clients access to your own work history via TaskTrace's local MCP server."
+}
