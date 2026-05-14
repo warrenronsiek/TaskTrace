@@ -75,8 +75,6 @@ final class SettingsStore: ObservableObject {
         var addTodoToolEnabled: Bool
         var addGoalToolEnabled: Bool
         var pushMessageToolEnabled: Bool
-        var highLevelActivityCount: Int?
-        var detailedActivityCount: Int?
 
         static let `default` = MCPConfiguration(
             serverEnabled: true,
@@ -88,9 +86,7 @@ final class SettingsStore: ObservableObject {
             graphSearchToolEnabled: true,
             addTodoToolEnabled: true,
             addGoalToolEnabled: true,
-            pushMessageToolEnabled: true,
-            highLevelActivityCount: 5,
-            detailedActivityCount: 5
+            pushMessageToolEnabled: true
         )
     }
 
@@ -217,17 +213,9 @@ final class SettingsStore: ObservableObject {
         let addTodoToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.addTodoToolEnabled")
         let addGoalToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.addGoalToolEnabled")
         let pushMessageToolEnabledValue = try? await settingsDatabaseActor.getSetting(named: "mcp.pushMessageToolEnabled")
-        let highLevelCountValue = try? await settingsDatabaseActor.getSetting(named: "mcp.highLevelActivityCount")
-        let detailedCountValue = try? await settingsDatabaseActor.getSetting(named: "mcp.detailedActivityCount")
 
         let valueForBool = { (value: String?, defaultValue: Bool) in
             value.flatMap(Bool.init) ?? defaultValue
-        }
-        let valueForCount = { (value: String?, defaultValue: Int?) in
-            guard let value else {
-                return defaultValue
-            }
-            return value == "all" ? nil : Int(value)
         }
         microphoneCaptureEnabled = valueForBool(microphoneCaptureEnabledValue, true)
         autoRecordOnLaunchEnabled = valueForBool(autoRecordOnLaunchEnabledValue, false)
@@ -241,9 +229,7 @@ final class SettingsStore: ObservableObject {
             graphSearchToolEnabled: valueForBool(graphSearchToolEnabledValue, true),
             addTodoToolEnabled: valueForBool(addTodoToolEnabledValue, true),
             addGoalToolEnabled: valueForBool(addGoalToolEnabledValue, true),
-            pushMessageToolEnabled: valueForBool(pushMessageToolEnabledValue, true),
-            highLevelActivityCount: valueForCount(highLevelCountValue, 5),
-            detailedActivityCount: valueForCount(detailedCountValue, 5)
+            pushMessageToolEnabled: valueForBool(pushMessageToolEnabledValue, true)
         )
         refreshLaunchAtLoginStatus()
     }
@@ -326,20 +312,6 @@ final class SettingsStore: ObservableObject {
         updatedConfiguration.pushMessageToolEnabled = isEnabled
         mcpConfiguration = updatedConfiguration
         persistSetting(named: "mcp.pushMessageToolEnabled", value: String(isEnabled))
-    }
-
-    func setHighLevelActivityCount(_ count: Int?) {
-        var updatedConfiguration = mcpConfiguration
-        updatedConfiguration.highLevelActivityCount = count
-        mcpConfiguration = updatedConfiguration
-        persistSetting(named: "mcp.highLevelActivityCount", value: count.map(String.init) ?? "all")
-    }
-
-    func setDetailedActivityCount(_ count: Int?) {
-        var updatedConfiguration = mcpConfiguration
-        updatedConfiguration.detailedActivityCount = count
-        mcpConfiguration = updatedConfiguration
-        persistSetting(named: "mcp.detailedActivityCount", value: count.map(String.init) ?? "all")
     }
 
     private func persistSetting(named name: String, value: String) {

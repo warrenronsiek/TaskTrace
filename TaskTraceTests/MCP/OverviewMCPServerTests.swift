@@ -93,6 +93,28 @@ struct OverviewMCPServerTests {
         #expect((await runtime.resourceURIs()).contains(Vars.mcpHighLevelActivityResourceURI))
     }
 
+    @Test("the high level feed includes every summarized activity")
+    func theHighLevelFeedIncludesEverySummarizedActivity() async {
+        let runtime = OverviewMCPServerRuntime()
+        let activities = (1...6).map { index in
+            makeActivity(
+                id: Int64(index),
+                startTime: Date(timeIntervalSince1970: Double(index * 60)),
+                summary: index == 1 ? "Oldest summarized activity" : "Summarized activity \(index)"
+            )
+        }
+
+        await runtime.update(
+            activeDay: Date(timeIntervalSince1970: 0),
+            overviews: [],
+            activities: activities,
+            configuration: .default
+        )
+
+        let highLevelFeedText = await runtime.resourceContents(uri: Vars.mcpHighLevelActivityResourceURI)?.first?.text ?? ""
+        #expect(highLevelFeedText.contains("Oldest summarized activity"))
+    }
+
     @Test("resource list omits the detailed feed when it is disabled")
     func resourceListOmitsTheDetailedFeedWhenItIsDisabled() async {
         let runtime = OverviewMCPServerRuntime()
@@ -153,6 +175,31 @@ struct OverviewMCPServerTests {
         )
 
         #expect((await runtime.resourceURIs()).contains(Vars.mcpDetailedActivityResourceURI))
+    }
+
+    @Test("the detailed feed includes every activity")
+    func theDetailedFeedIncludesEveryActivity() async {
+        let runtime = OverviewMCPServerRuntime()
+        var configuration = SettingsStore.MCPConfiguration.default
+        configuration.detailedActivityResourceEnabled = true
+        let activities = (1...6).map { index in
+            makeActivity(
+                id: Int64(index),
+                startTime: Date(timeIntervalSince1970: Double(index * 60)),
+                keystrokes: index == 1 ? "oldest keystrokes" : "keystrokes \(index)",
+                summary: nil
+            )
+        }
+
+        await runtime.update(
+            activeDay: Date(timeIntervalSince1970: 0),
+            overviews: [],
+            activities: activities,
+            configuration: configuration
+        )
+
+        let detailedFeedText = await runtime.resourceContents(uri: Vars.mcpDetailedActivityResourceURI)?.first?.text ?? ""
+        #expect(detailedFeedText.contains("oldest keystrokes"))
     }
 
     @Test("resource template list includes the screenshot template when the detailed feed is enabled")

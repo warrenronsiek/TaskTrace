@@ -137,8 +137,6 @@ actor OverviewMCPServerRuntime {
         let addTodoToolEnabled: Bool
         let addGoalToolEnabled: Bool
         let pushMessageToolEnabled: Bool
-        let highLevelActivityCount: Int?
-        let detailedActivityCount: Int?
     }
     
     private struct OverviewDocument: Codable, Equatable, Sendable {
@@ -288,9 +286,7 @@ actor OverviewMCPServerRuntime {
         graphSearchToolEnabled: true,
         addTodoToolEnabled: true,
         addGoalToolEnabled: true,
-        pushMessageToolEnabled: true,
-        highLevelActivityCount: 5,
-        detailedActivityCount: 5
+        pushMessageToolEnabled: true
     )
     private struct ServerSession: Sendable {
         let server: Server
@@ -587,9 +583,7 @@ actor OverviewMCPServerRuntime {
             graphSearchToolEnabled: configuration.graphSearchToolEnabled,
             addTodoToolEnabled: configuration.addTodoToolEnabled,
             addGoalToolEnabled: configuration.addGoalToolEnabled,
-            pushMessageToolEnabled: configuration.pushMessageToolEnabled,
-            highLevelActivityCount: configuration.highLevelActivityCount,
-            detailedActivityCount: configuration.detailedActivityCount
+            pushMessageToolEnabled: configuration.pushMessageToolEnabled
         )
         let nextDocument = OverviewDocument(
             date: dateFormatter.string(from: activeDay),
@@ -608,7 +602,6 @@ actor OverviewMCPServerRuntime {
                     .filter {
                         !($0.element.summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                     }
-                    .suffix(nextConfiguration.highLevelActivityCount ?? activities.count)
             )
             .reversed()
             .map { index, activity in
@@ -627,7 +620,6 @@ actor OverviewMCPServerRuntime {
             date: dateFormatter.string(from: activeDay),
             activities: Array(
                 activities.enumerated()
-                    .suffix(nextConfiguration.detailedActivityCount ?? activities.count)
             )
             .reversed()
             .map { index, activity in
@@ -675,7 +667,6 @@ actor OverviewMCPServerRuntime {
         )
         let nextTodayTodosDocument = await loadTodayTodosDocument(activeDay: activeDay)
         let nextScreenshotResources = activities
-            .suffix(nextConfiguration.detailedActivityCount ?? activities.count)
             .reduce(into: [String: ScreenshotResourceSnapshot]()) { partialResult, activity in
                 activity.screenshots.forEach { screenshot in
                     guard let image = screenshot.image else {
@@ -708,8 +699,6 @@ actor OverviewMCPServerRuntime {
             || nextConfiguration.highLevelActivityResourceEnabled != resourceConfiguration.highLevelActivityResourceEnabled
             || nextConfiguration.detailedActivityResourceEnabled != resourceConfiguration.detailedActivityResourceEnabled
             || nextConfiguration.todayTodosResourceEnabled != resourceConfiguration.todayTodosResourceEnabled
-            || nextConfiguration.highLevelActivityCount != resourceConfiguration.highLevelActivityCount
-            || nextConfiguration.detailedActivityCount != resourceConfiguration.detailedActivityCount
         let didChangeToolList =
             nextConfiguration.searchToolEnabled != resourceConfiguration.searchToolEnabled
             || nextConfiguration.graphSearchToolEnabled != resourceConfiguration.graphSearchToolEnabled

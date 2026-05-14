@@ -1247,13 +1247,11 @@ function McpConfigRow({ label, children }: { label: string; children: React.Reac
 }
 
 function McpResourceRow({
-  title, description, uri, enabled, onToggle,
-  count, onCountChange, hasSlider, warning,
+  title, description, uri, enabled, onToggle, warning,
 }: {
   title: string; description: string; uri: string;
   enabled: boolean; onToggle: (v: boolean) => void;
-  count: number | null; onCountChange: (v: number | null) => void;
-  hasSlider: boolean; warning?: string;
+  warning?: string;
 }) {
   return (
     <div style={mcp.row}>
@@ -1264,28 +1262,6 @@ function McpResourceRow({
         {warning && <div style={mcp.rowWarning}>{warning}</div>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
-        {hasSlider && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: enabled ? 1 : 0.45, transition: 'opacity 0.2s' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: C.textSecondary }}>
-              Items{' '}
-              <span style={{ color: C.textPrimary }}>{count ?? 'All'}</span>
-            </div>
-            <input
-              type="range" min={1} max={11}
-              value={count ?? 11}
-              onChange={e => {
-                const v = parseInt(e.target.value);
-                onCountChange(v === 11 ? null : v);
-              }}
-              disabled={!enabled}
-              style={{ width: 130, accentColor: C.accent, cursor: enabled ? 'pointer' : 'default' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: 130 }}>
-              <span style={{ fontSize: 9, color: C.textSecondary }}>1</span>
-              <span style={{ fontSize: 9, color: C.textSecondary }}>All</span>
-            </div>
-          </div>
-        )}
         <ToggleSwitch value={enabled} onChange={onToggle} />
       </div>
     </div>
@@ -1297,9 +1273,7 @@ function McpPanel() {
   const [securityEnabled, setSecurityEnabled] = useState(false);
   const [overviewEnabled, setOverviewEnabled] = useState(true);
   const [highEnabled,     setHighEnabled]     = useState(true);
-  const [highCount,       setHighCount]       = useState<number | null>(null);
   const [detailedEnabled, setDetailedEnabled] = useState(false);
-  const [detailedCount,   setDetailedCount]   = useState<number | null>(5);
 
   return (
     <div style={mcp.scroll}>
@@ -1344,21 +1318,18 @@ function McpPanel() {
             description="Publishes the active day overview titles, summaries, and durations."
             uri="tasktrace://overviews/active-day"
             enabled={overviewEnabled} onToggle={setOverviewEnabled}
-            count={null} onCountChange={() => {}} hasSlider={false}
           />
           <McpResourceRow
             title="High Level Activity Feed"
             description="Publishes recently completed activities with their summaries."
             uri="tasktrace://activities/high-level"
             enabled={highEnabled} onToggle={setHighEnabled}
-            count={highCount} onCountChange={setHighCount} hasSlider={true}
           />
           <McpResourceRow
             title="Detailed Activity Feed"
             description="Publishes recent activities with keystrokes, transcripts, summaries, and screenshots."
             uri="tasktrace://activities/detailed"
             enabled={detailedEnabled} onToggle={setDetailedEnabled}
-            count={detailedCount} onCountChange={setDetailedCount} hasSlider={true}
             warning="Warning! Enabling will introduce sensitive data to your agents!"
           />
         </div>

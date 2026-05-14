@@ -140,8 +140,7 @@ struct MCPView: View {
                         isOn: Binding(
                             get: { settingsStore.mcpConfiguration.overviewResourceEnabled },
                             set: settingsStore.setOverviewResourceEnabled
-                        ),
-                        count: .constant(nil)
+                        )
                     )
 
                     MCPResourceRow(
@@ -151,10 +150,6 @@ struct MCPView: View {
                         isOn: Binding(
                             get: { settingsStore.mcpConfiguration.highLevelActivityResourceEnabled },
                             set: settingsStore.setHighLevelActivityResourceEnabled
-                        ),
-                        count: Binding(
-                            get: { settingsStore.mcpConfiguration.highLevelActivityCount },
-                            set: settingsStore.setHighLevelActivityCount
                         )
                     )
 
@@ -169,10 +164,6 @@ struct MCPView: View {
                             get: { settingsStore.mcpConfiguration.detailedActivityResourceEnabled },
                             set: settingsStore.setDetailedActivityResourceEnabled
                         ),
-                        count: Binding(
-                            get: { settingsStore.mcpConfiguration.detailedActivityCount },
-                            set: settingsStore.setDetailedActivityCount
-                        ),
                         warning: "Warning! Enabling will introduce sensitive data to your agents! FAFO 😉"
                     )
 
@@ -183,18 +174,13 @@ struct MCPView: View {
                         isOn: Binding(
                             get: { settingsStore.mcpConfiguration.todayTodosResourceEnabled },
                             set: settingsStore.setTodayTodosResourceEnabled
-                        ),
-                        count: .constant(nil)
+                        )
                     )
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Published Tools")
                         .font(Styles.Fonts.headline)
-
-                    Text("Graph Search uses the knowledge directory currently selected in TaskTrace.")
-                        .font(Styles.Fonts.footnote)
-                        .foregroundStyle(AppColors.textSecondary)
 
                     MCPToolRow(
                         title: "Activity Search",
@@ -288,7 +274,7 @@ private struct MCPToolRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
+        HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(Styles.Fonts.headline)
@@ -370,7 +356,6 @@ private struct MCPResourceRow: View {
     let description: String
     let uri: String
     @Binding var isOn: Bool
-    @Binding var count: Int?
     let warning: String?
 
     init(
@@ -378,19 +363,17 @@ private struct MCPResourceRow: View {
         description: String,
         uri: String,
         isOn: Binding<Bool>,
-        count: Binding<Int?>,
         warning: String? = nil
     ) {
         self.title = title
         self.description = description
         self.uri = uri
         self._isOn = isOn
-        self._count = count
         self.warning = warning
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
+        HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(Styles.Fonts.headline)
@@ -412,45 +395,9 @@ private struct MCPResourceRow: View {
 
             Spacer(minLength: 12)
 
-            HStack(alignment: .center, spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text("Items")
-                            .font(Styles.Fonts.subheadlineSemibold)
-
-                        Text(count.map(String.init) ?? "All")
-                            .font(Styles.Fonts.subheadlineSemibold)
-                            .foregroundStyle(isOn ? AppColors.textPrimary : AppColors.textSecondary)
-                    }
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(count ?? 11) },
-                            set: { count = Int($0.rounded()) == 11 ? nil : Int($0.rounded()) }
-                        ),
-                        in: 1...11,
-                        step: 1
-                    )
-                    .frame(width: 220)
-                    .disabled(!isOn)
-
-                    HStack {
-                        Text("1")
-                        Spacer()
-                        Text("All")
-                    }
-                    .frame(width: 220)
-                    .font(Styles.Fonts.footnote)
-                    .foregroundStyle(AppColors.textSecondary)
-                    .opacity(isOn ? 1 : 0.55)
-                }
-                .opacity(isOn ? 1 : 0.55)
-
-                Toggle(title, isOn: $isOn)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            .frame(maxWidth: 320, alignment: .trailing)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
 
         }
         .padding(18)

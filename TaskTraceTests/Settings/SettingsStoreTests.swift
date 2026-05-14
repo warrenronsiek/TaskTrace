@@ -222,16 +222,6 @@ struct SettingsStoreTests {
         }
     }
 
-    @Test("setting the high level MCP activity count persists the selected count")
-    func settingTheHighLevelMCPActivityCountPersistsTheSelectedCount() async throws {
-        try await withStoreWithDatabase { settingsStore, database in
-            settingsStore.setHighLevelActivityCount(7)
-            try? await Task.sleep(for: .milliseconds(50))
-            let persistedSetting = try await database.getSetting(named: "mcp.highLevelActivityCount")
-            #expect(persistedSetting == "7")
-        }
-    }
-
     @Test("loading persisted settings restores the disabled MCP server state")
     func loadingPersistedSettingsRestoresTheDisabledMCPServerState() async throws {
         try await withStoreWithDatabase { settingsStore, database in
