@@ -66,6 +66,31 @@ protocol SystemAudioCapturing: AnyObject {
     func stopCapture()
 }
 
+enum AudioCaptureFrameSizing {
+    static func outputFrameCapacity(
+        inputFrameCount: AVAudioFrameCount,
+        sourceSampleRate: Double,
+        targetSampleRate: Double
+    ) -> AVAudioFrameCount? {
+        guard inputFrameCount > 0,
+              sourceSampleRate.isFinite,
+              sourceSampleRate > 0,
+              targetSampleRate.isFinite,
+              targetSampleRate > 0 else {
+            return nil
+        }
+
+        let capacity = ceil(Double(inputFrameCount) * targetSampleRate / sourceSampleRate)
+        guard capacity.isFinite,
+              capacity > 0,
+              capacity <= Double(AVAudioFrameCount.max) else {
+            return nil
+        }
+
+        return AVAudioFrameCount(capacity)
+    }
+}
+
 @MainActor
 protocol SpeechRecognitionTasking: AnyObject {
     func cancel()
@@ -176,19 +201,29 @@ final class MicrophoneAudioCaptureService: MicrophoneAudioCapturing, @unchecked 
         isCapturing = false
         isReconfiguring = false
         onAudioBuffer = nil
+
+        if let procID, deviceID != kAudioObjectUnknown {
+            audioQueue.async { [weak self] in
+                AudioDeviceStop(deviceID, procID)
+                AudioDeviceDestroyIOProcID(deviceID, procID)
+                self?.clearAudioPipelineAfterStop()
+            }
+        } else {
+            clearAudioPipelineAfterStop()
+        }
+
+        logger.log("microphone capture stopped")
+    }
+
+    private func clearAudioPipelineAfterStop() {
+        guard !isCapturing, ioProcID == nil else {
+            return
+        }
+
         audioConverter = nil
         inputFormat = nil
         targetFormat = nil
         detectedSampleRate = 0
-
-        if let procID, deviceID != kAudioObjectUnknown {
-            audioQueue.async {
-                AudioDeviceStop(deviceID, procID)
-                AudioDeviceDestroyIOProcID(deviceID, procID)
-            }
-        }
-
-        logger.log("microphone capture stopped")
     }
 
     private func startCaptureOnQueue() throws {
@@ -219,11 +254,16 @@ final class MicrophoneAudioCaptureService: MicrophoneAudioCapturing, @unchecked 
             throw AudioCaptureError.noInputAvailable
         }
 
-        detectedSampleRate = streamFormat.mSampleRate
+        let sampleRate = streamFormat.mSampleRate
+        guard sampleRate.isFinite, sampleRate > 0 else {
+            throw AudioCaptureError.converterCreationFailed
+        }
+
+        detectedSampleRate = sampleRate
 
         guard let inputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: streamFormat.mSampleRate,
+            sampleRate: sampleRate,
             channels: 1,
             interleaved: false
         ) else {
@@ -287,14 +327,18 @@ final class MicrophoneAudioCaptureService: MicrophoneAudioCapturing, @unchecked 
               let inputData,
               let converter = audioConverter,
               let targetFormat,
-              let inputFormat else {
+              let inputFormat,
+              let onAudioBuffer else {
             return
         }
+        let sampleRate = detectedSampleRate
 
         let inputBufferList = inputData.pointee
         let buffer = inputBufferList.mBuffers
 
-        guard let data = buffer.mData, buffer.mDataByteSize > 0 else {
+        guard let data = buffer.mData,
+              buffer.mDataByteSize > 0,
+              buffer.mNumberChannels > 0 else {
             return
         }
 
@@ -323,7 +367,13 @@ final class MicrophoneAudioCaptureService: MicrophoneAudioCapturing, @unchecked 
             memcpy(mono, source, Int(buffer.mDataByteSize))
         }
 
-        let outputFrameCapacity = AVAudioFrameCount(ceil(Double(frameCount) * targetSampleRate / detectedSampleRate))
+        guard let outputFrameCapacity = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: frameCount,
+            sourceSampleRate: sampleRate,
+            targetSampleRate: targetSampleRate
+        ) else {
+            return
+        }
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
             return
         }
@@ -348,7 +398,7 @@ final class MicrophoneAudioCaptureService: MicrophoneAudioCapturing, @unchecked 
             return
         }
 
-        onAudioBuffer?(outputBuffer)
+        onAudioBuffer(outputBuffer)
     }
 
     private func installPropertyListeners() {
@@ -490,6 +540,7 @@ final class MicrophoneAudioCaptureService: MicrophoneAudioCapturing, @unchecked 
         deviceID = newDeviceID
 
         guard let streamFormat = getStreamFormat(for: deviceID),
+              streamFormat.mSampleRate.isFinite,
               streamFormat.mSampleRate > 0,
               streamFormat.mChannelsPerFrame > 0,
               let inputFormat = AVAudioFormat(
@@ -663,12 +714,8 @@ final class SystemAudioCaptureService: SystemAudioCapturing, @unchecked Sendable
         self.tapID = kAudioObjectUnknown
         self.isCapturing = false
         self.onAudioBuffer = nil
-        self.audioConverter = nil
-        self.inputFormat = nil
-        self.targetFormat = nil
-        self.detectedSampleRate = 0
 
-        audioQueue.async {
+        audioQueue.async { [weak self] in
             if let procID, aggregateDeviceID != kAudioObjectUnknown {
                 AudioDeviceStop(aggregateDeviceID, procID)
                 AudioDeviceDestroyIOProcID(aggregateDeviceID, procID)
@@ -681,9 +728,22 @@ final class SystemAudioCaptureService: SystemAudioCapturing, @unchecked Sendable
             if tapID != kAudioObjectUnknown {
                 AudioHardwareDestroyProcessTap(tapID)
             }
+
+            self?.clearAudioPipelineAfterStop()
         }
 
         logger.log("system audio capture stopped")
+    }
+
+    private func clearAudioPipelineAfterStop() {
+        guard !isCapturing, ioProcID == nil else {
+            return
+        }
+
+        audioConverter = nil
+        inputFormat = nil
+        targetFormat = nil
+        detectedSampleRate = 0
     }
 
     private func startCaptureOnQueue() throws {
@@ -725,11 +785,17 @@ final class SystemAudioCaptureService: SystemAudioCapturing, @unchecked Sendable
             throw AudioCaptureError.formatError
         }
 
-        detectedSampleRate = streamFormat.mSampleRate
+        let sampleRate = streamFormat.mSampleRate
+        guard sampleRate.isFinite, sampleRate > 0 else {
+            cleanup()
+            throw AudioCaptureError.formatError
+        }
+
+        detectedSampleRate = sampleRate
 
         guard let inputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: streamFormat.mSampleRate,
+            sampleRate: sampleRate,
             channels: AVAudioChannelCount(max(1, streamFormat.mChannelsPerFrame)),
             interleaved: false
         ) else {
@@ -797,14 +863,18 @@ final class SystemAudioCaptureService: SystemAudioCapturing, @unchecked Sendable
               let inputData,
               let converter = audioConverter,
               let inputFormat,
-              let targetFormat else {
+              let targetFormat,
+              let onAudioBuffer else {
             return
         }
+        let sampleRate = detectedSampleRate
 
         let inputBufferList = inputData.pointee
         let buffer = inputBufferList.mBuffers
 
-        guard let data = buffer.mData, buffer.mDataByteSize > 0 else {
+        guard let data = buffer.mData,
+              buffer.mDataByteSize > 0,
+              buffer.mNumberChannels > 0 else {
             return
         }
 
@@ -833,7 +903,13 @@ final class SystemAudioCaptureService: SystemAudioCapturing, @unchecked Sendable
             memcpy(mono, source, Int(buffer.mDataByteSize))
         }
 
-        let outputFrameCapacity = AVAudioFrameCount(ceil(Double(frameCount) * targetSampleRate / detectedSampleRate))
+        guard let outputFrameCapacity = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: frameCount,
+            sourceSampleRate: sampleRate,
+            targetSampleRate: targetSampleRate
+        ) else {
+            return
+        }
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
             return
         }
@@ -858,7 +934,7 @@ final class SystemAudioCaptureService: SystemAudioCapturing, @unchecked Sendable
             return
         }
 
-        onAudioBuffer?(outputBuffer)
+        onAudioBuffer(outputBuffer)
     }
 
     private func cleanup() {

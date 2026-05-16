@@ -13,6 +13,51 @@ import Testing
 
 @MainActor
 struct MicrophoneTranscriberTests {
+    @Test("audio frame sizing converts between valid sample rates")
+    func audioFrameSizingConvertsBetweenValidSampleRates() {
+        let capacity = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: 4_800,
+            sourceSampleRate: 48_000,
+            targetSampleRate: 16_000
+        )
+
+        #expect(capacity == 1_600)
+    }
+
+    @Test("audio frame sizing rejects invalid source sample rates")
+    func audioFrameSizingRejectsInvalidSourceSampleRates() {
+        let zero = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: 4_800,
+            sourceSampleRate: 0,
+            targetSampleRate: 16_000
+        )
+        let nan = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: 4_800,
+            sourceSampleRate: .nan,
+            targetSampleRate: 16_000
+        )
+        let infinity = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: 4_800,
+            sourceSampleRate: .infinity,
+            targetSampleRate: 16_000
+        )
+
+        #expect(zero == nil)
+        #expect(nan == nil)
+        #expect(infinity == nil)
+    }
+
+    @Test("audio frame sizing rejects overflowing capacities")
+    func audioFrameSizingRejectsOverflowingCapacities() {
+        let capacity = AudioCaptureFrameSizing.outputFrameCapacity(
+            inputFrameCount: .max,
+            sourceSampleRate: 1,
+            targetSampleRate: 16_000
+        )
+
+        #expect(capacity == nil)
+    }
+
     @Test("starting the transcriber starts passive microphone capture")
     func startStartsMicrophoneCapture() async {
         let capture = FakeMicrophoneAudioCapture()
