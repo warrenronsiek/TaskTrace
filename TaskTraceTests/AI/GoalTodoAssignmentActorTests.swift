@@ -25,6 +25,19 @@ struct GoalTodoAssignmentActorTests {
         }
     }
 
+    @Test("goal todo assignment enables thinking")
+    func goalTodoAssignmentEnablesThinking() async throws {
+        try await withFixture(response: "0") { fixture in
+            try await fixture.seedOpenTodo(id: 42, name: "Leetcode", goalName: "Algorithms")
+            await fixture.actorSystem.broadcast(from: nil, message: ActivitySummarized(activity: fixture.activity()))
+            try await waitUntil {
+                await fixture.textResponder.firstAdditionalContext()?["enable_thinking"] as? Bool == true
+            }
+
+            #expect(await fixture.textResponder.firstAdditionalContext()?["enable_thinking"] as? Bool == true)
+        }
+    }
+
     @Test("goal todo assignment prompt includes standalone todos")
     func goalTodoAssignmentPromptIncludesStandaloneTodos() async throws {
         try await withFixture(response: "0") { fixture in
@@ -286,6 +299,7 @@ private actor GoalAssignmentTextResponder: Receiver {
     private let actorSystem: ActorSystem
     private let response: String
     private var prompts: [String] = []
+    private var additionalContexts: [[String: any Sendable]?] = []
 
     init(actorSystem: ActorSystem, response: String) {
         self.actorSystem = actorSystem
@@ -299,6 +313,7 @@ private actor GoalAssignmentTextResponder: Receiver {
         }
 
         prompts.append(request.prompt)
+        additionalContexts.append(request.additionalContext)
         let now = Date()
         await actorSystem.broadcast(
             from: nil,
@@ -322,6 +337,10 @@ private actor GoalAssignmentTextResponder: Receiver {
 
     func firstPrompt() -> String? {
         prompts.first
+    }
+
+    func firstAdditionalContext() -> [String: any Sendable]? {
+        additionalContexts.first ?? nil
     }
 }
 

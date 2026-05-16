@@ -398,6 +398,8 @@ struct AISchedulerTests {
             "skill_procedure",
             "generic_stream",
             "direct-text",
+            "direct-text-batch",
+            "activity-goal-todo-assignment",
             "unknown"
         ]
         let lanes = sources.map {

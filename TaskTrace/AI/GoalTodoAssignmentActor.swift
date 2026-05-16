@@ -77,7 +77,7 @@ actor GoalTodoAssignmentActor: Receiver {
                 prompt: Self.prompt(activity: activity, candidates: candidates),
                 instructions: Self.instructions,
                 generateParameters: GenerateParameters(maxTokens: 8, temperature: 0),
-                additionalContext: ["enable_thinking": false]
+                additionalContext: ["enable_thinking": true]
             )
 
             pendingRequests[modelRequest.requestID] = PendingRequest(

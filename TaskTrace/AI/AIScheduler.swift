@@ -846,7 +846,6 @@ nonisolated enum AITextModelLanePolicy {
 
     private static let smallSources: Set<String> = [
         "activity-summary",
-        "activity-goal-todo-assignment",
         "screenshot-summary",
         "overview-merge",
         "activity-tag-ontology-summary",
@@ -863,7 +862,8 @@ nonisolated enum AITextModelLanePolicy {
         "skill_procedure",
         "generic_stream",
         "direct-text",
-        "direct-text-batch"
+        "direct-text-batch",
+        "activity-goal-todo-assignment"
     ]
 
     static func lane(for request: ModelTextRequest) -> AITextModelLane {
