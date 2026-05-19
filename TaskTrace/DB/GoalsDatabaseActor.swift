@@ -725,12 +725,65 @@ actor GoalsDatabaseActor {
     func runDailyMaintenance(now: Date) async throws {
         let today = calendar.startOfDay(for: now)
         let todaySQL = today.formatted(TaskTraceDatabase.sqlDateStyle)
-        let yesterdaySQL = calendar.date(byAdding: .day, value: -1, to: today)?.formatted(TaskTraceDatabase.sqlDateStyle) ?? todaySQL
         let nowSQL = now.formatted(TaskTraceDatabase.sqlTimestampStyle)
 
         try database.write { db in
             try db.execute(
                 sql: """
+                    WITH RECURSIVE backfill_todos (
+                        goal_id,
+                        name,
+                        daily_target_seconds,
+                        daily_target_mode,
+                        target_date
+                    ) AS (
+                        SELECT
+                            source.goal_id,
+                            source.name,
+                            source.daily_target_seconds,
+                            source.daily_target_mode,
+                            DATE(source.target_date, '+1 day')
+                        FROM goal_todos source
+                        LEFT JOIN goals ON goals.id = source.goal_id
+                        WHERE (
+                              source.goal_id IS NULL
+                              OR (
+                                  goals.done_ts IS NULL
+                                  AND goals.delete_ts IS NULL
+                              )
+                          )
+                          AND source.delete_ts IS NULL
+                          AND source.repeating = 1
+                          AND source.target_date IS NOT NULL
+                          AND DATE(source.target_date) = (
+                              SELECT MAX(DATE(latest.target_date))
+                              FROM goal_todos latest
+                              LEFT JOIN goals latest_goal ON latest_goal.id = latest.goal_id
+                              WHERE (
+                                    latest.goal_id IS NULL
+                                    OR (
+                                        latest_goal.done_ts IS NULL
+                                        AND latest_goal.delete_ts IS NULL
+                                    )
+                                )
+                                AND latest.delete_ts IS NULL
+                                AND latest.repeating = 1
+                                AND latest.target_date IS NOT NULL
+                                AND DATE(latest.target_date) < DATE(?)
+                          )
+                          AND DATE(source.target_date) < DATE(?)
+
+                        UNION ALL
+
+                        SELECT
+                            goal_id,
+                            name,
+                            daily_target_seconds,
+                            daily_target_mode,
+                            DATE(target_date, '+1 day')
+                        FROM backfill_todos
+                        WHERE DATE(target_date) < DATE(?)
+                    )
                     INSERT INTO goal_todos (
                         goal_id,
                         name,
@@ -744,46 +797,42 @@ actor GoalsDatabaseActor {
                         embedding
                     )
                     SELECT
-                        source.goal_id,
-                        source.name,
+                        backfill.goal_id,
+                        backfill.name,
                         ?,
                         ?,
                         NULL,
                         1,
-                        ?,
-                        source.daily_target_seconds,
-                        source.daily_target_mode,
+                        backfill.target_date,
+                        backfill.daily_target_seconds,
+                        backfill.daily_target_mode,
                         NULL
-                    FROM goal_todos source
-                    LEFT JOIN goals ON goals.id = source.goal_id
-                    WHERE (
-                          source.goal_id IS NULL
-                          OR (
-                              goals.done_ts IS NULL
-                              AND goals.delete_ts IS NULL
-                          )
-                      )
-                      AND source.delete_ts IS NULL
-                      AND source.repeating = 1
-                      AND source.target_date IS NOT NULL
-                      AND DATE(source.target_date) = DATE(?)
-                      AND NOT EXISTS (
+                    FROM (
+                        SELECT DISTINCT
+                            goal_id,
+                            name,
+                            daily_target_seconds,
+                            daily_target_mode,
+                            target_date
+                        FROM backfill_todos
+                    ) backfill
+                    WHERE NOT EXISTS (
                           SELECT 1
                           FROM goal_todos existing
                           WHERE existing.repeating = 1
-                            AND DATE(existing.target_date) = DATE(?)
-                            AND COALESCE(existing.goal_id, -1) = COALESCE(source.goal_id, -1)
-                            AND existing.name = source.name
-                            AND COALESCE(existing.daily_target_seconds, -1) = COALESCE(source.daily_target_seconds, -1)
-                            AND existing.daily_target_mode = source.daily_target_mode
+                            AND DATE(existing.target_date) = DATE(backfill.target_date)
+                            AND COALESCE(existing.goal_id, -1) = COALESCE(backfill.goal_id, -1)
+                            AND existing.name = backfill.name
+                            AND COALESCE(existing.daily_target_seconds, -1) = COALESCE(backfill.daily_target_seconds, -1)
+                            AND existing.daily_target_mode = backfill.daily_target_mode
                       )
                     """,
                 arguments: [
-                    nowSQL,
-                    GoalTodoStatus.open.rawValue,
                     todaySQL,
-                    yesterdaySQL,
-                    todaySQL
+                    todaySQL,
+                    todaySQL,
+                    nowSQL,
+                    GoalTodoStatus.open.rawValue
                 ]
             )
 

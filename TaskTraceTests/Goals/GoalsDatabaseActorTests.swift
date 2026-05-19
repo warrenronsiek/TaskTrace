@@ -256,8 +256,8 @@ struct GoalsDatabaseActorTests {
         }
     }
 
-    @Test("daily maintenance does not catch up missed repeating days")
-    func dailyMaintenanceDoesNotCatchUpMissedRepeatingDays() async throws {
+    @Test("daily maintenance backfills missed repeating days")
+    func dailyMaintenanceBackfillsMissedRepeatingDays() async throws {
         try await withGoalsDatabase { database, goalsDatabaseActor in
             let now = Date(timeIntervalSince1970: 1_765_000_000)
             let twoDaysAgo = now.addingTimeInterval(-172_800)
@@ -265,10 +265,44 @@ struct GoalsDatabaseActorTests {
             try await goalsDatabaseActor.runDailyMaintenance(now: now)
 
             let instanceCount = try database.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE DATE(target_date) = DATE(?)", arguments: [now.formatted(TaskTraceDatabase.sqlDateStyle)]) ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE repeating = 1 AND name = 'Old repeat'") ?? 0
             }
 
-            #expect(instanceCount == 0)
+            #expect(instanceCount == 3)
+        }
+    }
+
+    @Test("daily maintenance is idempotent for backfilled repeating days")
+    func dailyMaintenanceIsIdempotentForBackfilledRepeatingDays() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let twoDaysAgo = now.addingTimeInterval(-172_800)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Old repeat", createTs: twoDaysAgo, status: .open, statusTs: nil, repeating: true, targetDate: twoDaysAgo, dailyTargetSeconds: nil))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let instanceCount = try database.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM goal_todos WHERE repeating = 1 AND name = 'Old repeat'") ?? 0
+            }
+
+            #expect(instanceCount == 3)
+        }
+    }
+
+    @Test("daily maintenance resolves backfilled historical target")
+    func dailyMaintenanceResolvesBackfilledHistoricalTarget() async throws {
+        try await withGoalsDatabase { database, goalsDatabaseActor in
+            let now = Date(timeIntervalSince1970: 1_765_000_000)
+            let twoDaysAgo = now.addingTimeInterval(-172_800)
+            let yesterday = now.addingTimeInterval(-86_400)
+            try await goalsDatabaseActor.saveTodo(GoalTodoInput(id: 2, goalID: nil, name: "Old repeat", createTs: twoDaysAgo, status: .open, statusTs: nil, repeating: true, targetDate: twoDaysAgo, dailyTargetSeconds: 1_800))
+            try await goalsDatabaseActor.runDailyMaintenance(now: now)
+
+            let status = try database.read { db in
+                try String.fetchOne(db, sql: "SELECT status FROM goal_todos WHERE name = 'Old repeat' AND DATE(target_date) = DATE(?)", arguments: [yesterday.formatted(TaskTraceDatabase.sqlDateStyle)])
+            }
+
+            #expect(status == GoalTodoStatus.failed.rawValue)
         }
     }
 
